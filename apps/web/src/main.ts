@@ -3,6 +3,7 @@ import './style.css';
 import type { SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
+import { Sound } from './sound';
 import { ensureSession, fetchConfig, requestSpin, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -19,6 +20,8 @@ let spinning = false;
 
 const board = new Board($('board') as unknown as HTMLCanvasElement);
 const fx = new Fx($('fx') as unknown as HTMLCanvasElement);
+const sound = new Sound();
+board.onColumnLand = () => sound.land();
 
 function fmt(n: number) { return Math.round(n).toLocaleString('zh-CN'); }
 
@@ -87,7 +90,9 @@ async function playResult(result: SpinResult) {
   for (const step of result.cascades) {
     if (step.wins.length === 0) break;
     popMultiplier(step.chainMultiplier);
+    if (step.chainMultiplier >= 2) sound.pop(step.chainMultiplier);
     await board.flashWins(step.removedPositions);
+    sound.remove();
     await board.removeTiles(step.removedPositions);
     running += step.stepWin;
     rollTo($('win'), running, 420);
@@ -104,10 +109,12 @@ async function playResult(result: SpinResult) {
     const rain = TIER_RAIN[result.winTier];
     if (rain > 0) fx.rain(rain);
     if (result.winTier === 'tianhu') shake($('app'));
+    sound.tier(result.winTier);
     await showBanner(TIER_TEXT[result.winTier], `赢 ${fmt(result.totalWin)} 文`, result.winTier);
   }
   if (result.freeSpinsAwarded > 0) {
     fx.rain(2);
+    sound.gong();
     await showBanner('免费旋转！', `骰子 ×${result.scatterCount} → ${result.freeSpinsAwarded} 次`, 'fs');
   }
 }
@@ -144,6 +151,32 @@ async function doSpin() {
   }
 }
 
+/** 桌面侧栏赔付表（按当前注换算成文） */
+const PT_SYMBOLS: Array<{ key: string; char: string; cls: string }> = [
+  { key: 'zhong', char: '中', cls: 'red' },
+  { key: 'fa', char: '發', cls: 'green' },
+  { key: 'east', char: '東', cls: 'blue' },
+  { key: 'south', char: '南', cls: 'blue' },
+  { key: 'west', char: '西', cls: 'blue' },
+  { key: 'north', char: '北', cls: 'blue' },
+  { key: 'wan', char: '萬', cls: 'red' },
+  { key: 'tong', char: '筒', cls: 'blue' },
+  { key: 'tiao', char: '條', cls: 'green' },
+];
+function renderPaytable() {
+  const bet = config.betLevels[betIndex]!;
+  const rows = PT_SYMBOLS.map(({ key, char, cls }) => {
+    const pays = config.paytable[key] ?? [0, 0, 0];
+    const cells = pays.map((p) => `<span>${fmt(p * bet)}</span>`).join('');
+    return `<div class="pt-row"><b class="pt-sym ${cls}">${char}</b>${cells}</div>`;
+  }).join('');
+  $('paytable').innerHTML = `
+    <h3>赔付表 <small>注 ${bet}</small></h3>
+    <div class="pt-row pt-head"><b></b><span>8+</span><span>10+</span><span>12+</span></div>
+    ${rows}
+    <p class="pt-note">白板＝百搭 · 骰子 ≥${config.freeSpins.trigger} 触发免费旋转<br>集满 ${config.pity.target} 骰子必得 ${config.pity.award} 次 · 封顶 ${fmt(config.maxWinX * bet)}</p>`;
+}
+
 function demoGrid() {
   const symbols = ['zhong', 'fa', 'east', 'south', 'west', 'north', 'wan', 'tong', 'tiao'] as const;
   return Array.from({ length: 6 }, () =>
@@ -166,14 +199,22 @@ async function init() {
   config = await fetchConfig();
   state = await ensureSession();
   renderHud();
+  renderPaytable();
 
-  $('bet-minus').onclick = () => { if (betIndex > 0) { betIndex--; renderHud(); } };
-  $('bet-plus').onclick = () => { if (betIndex < config.betLevels.length - 1) { betIndex++; renderHud(); } };
+  $('bet-minus').onclick = () => { if (betIndex > 0) { betIndex--; renderHud(); renderPaytable(); } };
+  $('bet-plus').onclick = () => { if (betIndex < config.betLevels.length - 1) { betIndex++; renderHud(); renderPaytable(); } };
   $('spin').onclick = () => void doSpin();
   $('turbo').onclick = () => {
     board.speed = board.speed === 1 ? 2.5 : 1;
     $('turbo').classList.toggle('on', board.speed !== 1);
   };
+  $('mute').onclick = () => {
+    const muted = sound.toggle();
+    $('mute').textContent = muted ? '静' : '音';
+    $('mute').classList.toggle('off', muted);
+  };
+  $('mute').textContent = sound.muted ? '静' : '音';
+  $('mute').classList.toggle('off', sound.muted);
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') { e.preventDefault(); void doSpin(); }
   });

@@ -18,6 +18,8 @@ export interface PublicConfig {
   maxWinX: number;
   pity: { target: number; award: number };
   freeSpins: { trigger: number; base: number; perExtra: number };
+  /** 各符号三档赔付（×bet 倍数，已含 payoutScale） */
+  paytable: Record<string, number[]>;
 }
 
 let token = localStorage.getItem(TOKEN_KEY) ?? undefined;

@@ -29,8 +29,11 @@ export class Board {
   private lastFrame = performance.now();
   private cols = 6;
   private rows = 5;
+  private anticipateCol = -1;
   speed = 1;
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** 每列落定回调（音效钩子） */
+  onColumnLand?: () => void;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -107,6 +110,15 @@ export class Board {
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
 
+    // 近失悬念：当前慢落列的金光聚焦
+    if (this.anticipateCol >= 0) {
+      const x = gap + this.anticipateCol * (cellW + gap) - gap / 2;
+      ctx.fillStyle = `rgba(227,201,138,${(0.1 + 0.08 * Math.sin(now / 110)).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.roundRect(x, gap / 2, cellW + gap, h - gap, 8);
+      ctx.fill();
+    }
+
     // 牌
     for (let col = 0; col < this.sprites.length; col++) {
       for (let row = 0; row < (this.sprites[col]?.length ?? 0); row++) {
@@ -133,12 +145,17 @@ export class Board {
           drawW = sw; drawH = sh;
         }
 
+        const special = s.cell.symbol === 'scatter' || s.cell.symbol === 'gold' || s.cell.symbol === 'wild';
         ctx.save();
         ctx.globalAlpha = s.alpha;
         if (s.highlight) {
           // 呼吸金光
           ctx.shadowColor = 'rgba(227,201,138,0.95)';
           ctx.shadowBlur = cellW * (0.16 + 0.08 * Math.sin(now / 130));
+        } else if (special && !this.reducedMotion) {
+          // 特殊牌（骰子/金牌/白板）常驻呼吸光，稀有感
+          ctx.shadowColor = 'rgba(227,201,138,0.8)';
+          ctx.shadowBlur = cellW * (0.09 + 0.05 * Math.sin(now / 300 + col * 1.7 + row));
         } else {
           ctx.shadowColor = 'rgba(0,0,0,0.35)';
           ctx.shadowBlur = 4;
@@ -194,29 +211,54 @@ export class Board {
     })));
   }
 
-  /** 落牌入场：整列从上方掉入，列间错峰，落地压弹 */
+  /** 落牌入场：列间错峰；已见 ≥3 骰子时剩余列进入近失悬念（逐列慢落 + 金光聚焦） */
   async dropIn(grid: Grid) {
     const { cellH, h } = this.metrics();
     this.setGrid(grid);
     const drop = h + cellH;
     for (const col of this.sprites) for (const s of col) s.yOff = -drop;
-    const stagger = 55;
-    const dur = 300;
-    const total = dur + stagger * (this.cols - 1);
+
+    // 真实近失才触发：落到某列时累计已见 3 个骰子，且后面还有列
+    let anticipateFrom = -1;
+    if (!this.reducedMotion) {
+      let cum = 0;
+      for (let c = 0; c < this.cols - 1; c++) {
+        cum += grid[c]!.filter((cell) => cell.symbol === 'scatter').length;
+        if (cum === 3) { anticipateFrom = c + 1; break; }
+        if (cum > 3) break; // 已经 ≥4，直接触发免费旋转，无需吊胃口
+      }
+    }
+
+    const normalUntil = anticipateFrom >= 0 ? anticipateFrom : this.cols;
+    await this.dropColumns(0, normalUntil, drop, 300, 55);
+    if (anticipateFrom >= 0) {
+      for (let c = anticipateFrom; c < this.cols; c++) {
+        this.anticipateCol = c;
+        await this.dropColumns(c, c + 1, drop, 820, 0);
+      }
+      this.anticipateCol = -1;
+    }
+    for (const col of this.sprites) for (const s of col) s.yOff = 0;
+  }
+
+  private async dropColumns(from: number, to: number, drop: number, dur: number, stagger: number) {
+    const total = dur + stagger * Math.max(0, to - from - 1);
     const landed = new Set<number>();
     await this.animate(total, (t) => {
       const now = t * total;
-      for (let c = 0; c < this.sprites.length; c++) {
-        const local = Math.min(1, Math.max(0, (now - c * stagger) / dur));
+      for (let c = from; c < to; c++) {
+        const local = Math.min(1, Math.max(0, (now - (c - from) * stagger) / dur));
         const e = easeOutBack(local);
         for (const s of this.sprites[c]!) s.yOff = -drop * (1 - e);
         if (local >= 1 && !landed.has(c)) {
           landed.add(c);
-          for (const s of this.sprites[c]!) s.landAt = performance.now();
+          const ts = performance.now();
+          for (const s of this.sprites[c]!) s.landAt = ts;
+          this.onColumnLand?.();
         }
       }
     });
-    for (const col of this.sprites) for (const s of col) s.yOff = 0;
+    for (let c = from; c < to; c++) for (const s of this.sprites[c]!) s.yOff = 0;
   }
 
   async flashWins(positions: Position[], ms = 420) {

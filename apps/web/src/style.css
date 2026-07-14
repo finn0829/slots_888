@@ -310,18 +310,71 @@ button:focus-visible, .banner:focus-visible { outline: 2px solid var(--gold-300)
     0 8px 22px rgba(0,0,0,.45);
 }
 #spin:active:not(:disabled) { transform: translateY(3px); box-shadow: inset 0 0 0 2px rgba(227,201,138,0.28), 0 1px 0 var(--cinnabar-700); }
-#turbo {
+#turbo, #mute {
   font-family: var(--kai);
   font-size: 20px;
   min-width: 52px;
   background: rgba(0,0,0,0.22);
 }
+#mute.off { opacity: .5; }
 #turbo.on {
   background: linear-gradient(180deg, var(--gold-300), var(--gold-500));
   color: var(--wood-900);
   border-color: var(--gold-300);
   box-shadow: 0 0 16px rgba(227,201,138,0.45);
 }
+
+/* ── 桌面侧栏赔付表（≥1100px 显示，利用两侧空间） ── */
+#paytable {
+  display: none;
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  left: max(18px, calc(50% - 585px));
+  width: 252px;
+  z-index: 3;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgba(30,21,11,0.92), rgba(20,14,7,0.94));
+  border: 1px solid var(--gold-700);
+  box-shadow: inset 0 0 0 2px rgba(201,164,92,0.3), 0 12px 30px rgba(0,0,0,0.5);
+  color: var(--ivory-300);
+}
+@media (min-width: 1100px) { #paytable { display: block; } }
+#paytable h3 {
+  font-family: var(--kai);
+  font-size: 18px;
+  letter-spacing: 4px;
+  color: var(--gold-300);
+  margin-bottom: 10px;
+  text-align: center;
+}
+#paytable h3 small { font-size: 11px; color: var(--gold-500); letter-spacing: 1px; }
+.pt-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 1fr 1fr;
+  align-items: center;
+  gap: 4px;
+  padding: 3.5px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  border-bottom: 1px solid rgba(201,164,92,0.12);
+}
+.pt-row.pt-head { color: var(--gold-500); font-size: 11px; border-bottom-color: var(--gold-700); }
+.pt-sym {
+  font-family: var(--kai);
+  font-size: 19px;
+  text-align: center;
+  background: var(--ivory-300);
+  border-radius: 4px;
+  line-height: 1.35;
+  box-shadow: 0 1.5px 0 var(--ivory-500);
+}
+.pt-sym.red { color: var(--cinnabar-500); }
+.pt-sym.green { color: var(--bamboo-500, #3E7C59); }
+.pt-sym.blue { color: #35507A; }
+.pt-note { margin-top: 10px; font-size: 11px; line-height: 1.7; color: rgba(245,239,224,0.6); }
 
 @media (prefers-reduced-motion: reduce) {
   #app.shake { animation: none; }
