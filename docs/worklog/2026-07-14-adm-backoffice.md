@@ -19,3 +19,11 @@
   - **回放校验放服务端**：admin 不引 engine，防止"前端一套判定逻辑"违反唯一真相源纪律。
   - **经济参数用 settings KV** 而非专表：目前仅一组参数，YAGNI。
 - 踩坑：CT-3 在前序（已被上下文压缩的）会话片段里已改好，差点重复编辑——Edit 的 file-modified 保护挡住了。**复盘点：上下文压缩后恢复实施前，应先 `git diff` 看工作区实际状态再动手。**
+
+## 环节 2 · SRV-9 管理操作日志
+
+- TDD：先写 4 用例（401 / 三类动作自动落日志含 detail / type 过滤+total / 失败登录不落）跑失败，再实现。
+- 实现：SCHEMA 加 admin_ops+settings（settings 顺手建好给环节 3 用）；`logOp(action, detail)` 单行 helper；login/publish/rollback 三处埋点；`GET /api/admin/ops` 带过滤分页。
+- 结果：37/37 绿（新增 4）。
+- 决策：埋点只记成功路径（失败登录不记，避免日志被爆破噪音填满——本地项目，无告警需求）。
+- 踩坑：无。耗时感受：小（一次过）。

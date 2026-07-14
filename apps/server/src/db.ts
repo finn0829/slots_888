@@ -64,6 +64,21 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_tx_player_time ON transactions(player_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_tx_type_time   ON transactions(type, created_at);
+
+-- 管理操作日志（SRV-9）：只增不改不删；transactions 只管资金，管理动作一律进这里
+CREATE TABLE IF NOT EXISTS admin_ops (
+  id         INTEGER PRIMARY KEY,
+  action     TEXT NOT NULL,
+  detail     TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ops_action_time ON admin_ops(action, created_at);
+
+-- 运行时可调参数（key='economy' → EconomyParams，见 CT-2）
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 export type Db = Database.Database;

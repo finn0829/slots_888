@@ -294,6 +294,11 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   // ── 管理侧 ──
 
+  /** 管理动作留痕（SRV-9）：资金动作另有 transactions，这里记全部管理行为 */
+  const logOp = (action: string, detail: unknown) => {
+    db.prepare('INSERT INTO admin_ops (action, detail) VALUES (?, ?)').run(action, JSON.stringify(detail));
+  };
+
   app.post('/api/admin/login', async (req, reply) => {
     const body = (req.body ?? {}) as { password?: string };
     if (body.password !== adminPassword) {
@@ -301,6 +306,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     }
     const adminToken = randomBytes(24).toString('hex');
     adminTokens.add(adminToken);
+    logOp('login', {});
     return { adminToken };
   });
 
@@ -383,6 +389,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
     if (row.status !== 'draft') return reply.code(409).send(apiError('CONFLICT', '只有草稿可以发布'));
     publishTx(version);
+    logOp('config_publish', { version, label: row.label });
     return { meta: configMeta(getConfigRow.get(version) as ConfigRow) };
   });
 
@@ -396,6 +403,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     db.prepare("INSERT INTO game_configs (version, label, status, config_json, estimated_rtp) VALUES (?, ?, 'draft', ?, ?)")
       .run(next, `回滚自 v${version}（${row.label}）`, row.config_json, row.estimated_rtp);
     publishTx(next);
+    logOp('config_rollback', { fromVersion: version, newVersion: next, label: row.label });
     return { meta: configMeta(getConfigRow.get(next) as ConfigRow) };
   });
 
@@ -423,6 +431,20 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       maxWinX: s.maxWinX, stdevX: s.stdevX, featureWinShare: s.featureWinShare,
       spins: s.spins, elapsedMs: s.elapsedMs,
     };
+  });
+
+  const OPS_PAGE_SIZE = 50;
+  app.get('/api/admin/ops', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { type?: string; page?: string };
+    const page = Math.max(1, Number(q.page) || 1);
+    const where = q.type ? 'WHERE action = ?' : '';
+    const params = q.type ? [q.type] : [];
+    const { total } = db.prepare(`SELECT COUNT(*) AS total FROM admin_ops ${where}`).get(...params) as { total: number };
+    const rows = db.prepare(
+      `SELECT id, action, detail, created_at AS createdAt FROM admin_ops ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    ).all(...params, OPS_PAGE_SIZE, (page - 1) * OPS_PAGE_SIZE);
+    return { ops: rows, total };
   });
 
   app.get('/api/admin/stats', async (req, reply) => {
