@@ -19,11 +19,16 @@ const BET_LEVELS = [10, 20, 50, 100, 200, 500];
 const INITIAL_BALANCE = 10000;
 const PITY_TARGET = 100;
 const PITY_AWARD = 10;
-// 经济缓冲（SRV-7，数值见 docs/BACKLOG.md 经济数值表）
-const DAILY_BONUS = 1000;
-const RELIEF_AMOUNT = 2000;
-const RELIEF_COOLDOWN_HOURS = 4;
 const MIN_BET = BET_LEVELS[0]!;
+
+// 经济缓冲参数（SRV-7）：默认值即需求池经济数值表；运行时可被 settings 表覆盖（ADM-7）
+export interface EconomyParams {
+  dailyBonus: number;
+  reliefAmount: number;
+  reliefCooldownHours: number;
+}
+const ECONOMY_DEFAULTS: EconomyParams = { dailyBonus: 1000, reliefAmount: 2000, reliefCooldownHours: 4 };
+const ECONOMY_MAX_COOLDOWN_HOURS = 168;
 
 interface PlayerRow {
   id: number;
@@ -45,15 +50,15 @@ function canClaimDaily(p: PlayerRow): boolean {
 }
 
 /** 破产补币：余额不够最低注，且冷却已过 */
-function canClaimRelief(p: PlayerRow): boolean {
+function canClaimRelief(p: PlayerRow, eco: EconomyParams): boolean {
   if (p.balance >= MIN_BET) return false;
   if (p.free_spins_remaining > 0) return false; // 还有免费旋转可打，不算破产
   if (!p.last_relief_at) return true;
   const elapsed = Date.now() - new Date(`${p.last_relief_at.replace(' ', 'T')}Z`).getTime();
-  return elapsed >= RELIEF_COOLDOWN_HOURS * 3600_000;
+  return elapsed >= eco.reliefCooldownHours * 3600_000;
 }
 
-function playerState(p: PlayerRow) {
+function playerState(p: PlayerRow, eco: EconomyParams) {
   return {
     playerId: p.id,
     balance: p.balance,
@@ -63,7 +68,7 @@ function playerState(p: PlayerRow) {
     diceProgress: p.dice_progress,
     status: p.status,
     canClaimDaily: canClaimDaily(p),
-    canClaimRelief: canClaimRelief(p),
+    canClaimRelief: canClaimRelief(p, eco),
   };
 }
 
@@ -87,6 +92,13 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   const getPlayerByToken = db.prepare('SELECT * FROM players WHERE token = ?');
   const getPublished = db.prepare("SELECT version, config_json FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1");
 
+  /** 经济参数：settings 表覆盖默认值（缺 key 或缺字段都回退默认） */
+  function getEconomy(): EconomyParams {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'economy'").get() as { value: string } | undefined;
+    if (!row) return { ...ECONOMY_DEFAULTS };
+    return { ...ECONOMY_DEFAULTS, ...(JSON.parse(row.value) as Partial<EconomyParams>) };
+  }
+
   function bearer(req: FastifyRequest): string | null {
     const h = req.headers.authorization;
     return h?.startsWith('Bearer ') ? h.slice(7) : null;
@@ -106,18 +118,18 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     const body = (req.body ?? {}) as { token?: string };
     if (body.token) {
       const existing = getPlayerByToken.get(body.token) as PlayerRow | undefined;
-      if (existing) return { token: existing.token, state: playerState(existing) };
+      if (existing) return { token: existing.token, state: playerState(existing, getEconomy()) };
     }
     const token = randomBytes(16).toString('hex');
     const info = db.prepare('INSERT INTO players (token, balance) VALUES (?, ?)').run(token, INITIAL_BALANCE);
     const p = db.prepare('SELECT * FROM players WHERE id = ?').get(info.lastInsertRowid) as PlayerRow;
-    return { token, state: playerState(p) };
+    return { token, state: playerState(p, getEconomy()) };
   });
 
   app.get('/api/me', async (req, reply) => {
     const p = requirePlayer(req);
     if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
-    return { state: playerState(p) };
+    return { state: playerState(p, getEconomy()) };
   });
 
   app.get('/api/config', async () => {
@@ -216,7 +228,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     run();
 
     const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
-    return { spin: result, state: playerState(updated) };
+    return { spin: result, state: playerState(updated, getEconomy()) };
   });
 
   // ── 玩家个人统计（SRV-10）：数据全部来自 spins/transactions，与后台看板同源可对账 ──
@@ -274,22 +286,24 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
     if (p.status === 'banned') return reply.code(403).send(apiError('BANNED', '账号已被封禁'));
     if (!canClaimDaily(p)) return reply.code(409).send(apiError('CONFLICT', '今天已经签到过了，明天再来'));
-    grant(p, DAILY_BONUS, 'daily_bonus', 'last_daily_claim_at');
+    const eco = getEconomy();
+    grant(p, eco.dailyBonus, 'daily_bonus', 'last_daily_claim_at');
     const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
-    return { amount: DAILY_BONUS, state: playerState(updated) };
+    return { amount: eco.dailyBonus, state: playerState(updated, eco) };
   });
 
   app.post('/api/claim-relief', async (req, reply) => {
     const p = requirePlayer(req);
     if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
     if (p.status === 'banned') return reply.code(403).send(apiError('BANNED', '账号已被封禁'));
-    if (!canClaimRelief(p)) {
-      const why = p.balance >= MIN_BET ? '余额还够玩，暂不能领取救济' : `救济金冷却中（每 ${RELIEF_COOLDOWN_HOURS} 小时一次）`;
+    const eco = getEconomy();
+    if (!canClaimRelief(p, eco)) {
+      const why = p.balance >= MIN_BET ? '余额还够玩，暂不能领取救济' : `救济金冷却中（每 ${eco.reliefCooldownHours} 小时一次）`;
       return reply.code(409).send(apiError('CONFLICT', why));
     }
-    grant(p, RELIEF_AMOUNT, 'bankrupt_relief', 'last_relief_at');
+    grant(p, eco.reliefAmount, 'bankrupt_relief', 'last_relief_at');
     const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
-    return { amount: RELIEF_AMOUNT, state: playerState(updated) };
+    return { amount: eco.reliefAmount, state: playerState(updated, eco) };
   });
 
   // ── 管理侧 ──
@@ -431,6 +445,29 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       maxWinX: s.maxWinX, stdevX: s.stdevX, featureWinShare: s.featureWinShare,
       spins: s.spins, elapsedMs: s.elapsedMs,
     };
+  });
+
+  app.get('/api/admin/economy', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    return { params: getEconomy() };
+  });
+
+  app.put('/api/admin/economy', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const body = (req.body ?? {}) as { params?: Partial<EconomyParams> };
+    const p = body.params;
+    const isPosInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+    if (!p || !isPosInt(p.dailyBonus) || !isPosInt(p.reliefAmount) || !isPosInt(p.reliefCooldownHours)
+      || p.reliefCooldownHours > ECONOMY_MAX_COOLDOWN_HOURS) {
+      return reply.code(400).send(apiError('BAD_REQUEST',
+        `参数须为正整数，冷却 ≤${ECONOMY_MAX_COOLDOWN_HOURS} 小时`));
+    }
+    const before = getEconomy();
+    const after: EconomyParams = { dailyBonus: p.dailyBonus, reliefAmount: p.reliefAmount, reliefCooldownHours: p.reliefCooldownHours };
+    db.prepare("INSERT INTO settings (key, value) VALUES ('economy', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(after));
+    logOp('economy_update', { before, after });
+    return { params: after };
   });
 
   const OPS_PAGE_SIZE = 50;
