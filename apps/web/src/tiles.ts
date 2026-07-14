@@ -86,6 +86,10 @@ function engraveText(
   g.addColorStop(1, dark);
   ctx.fillStyle = g;
   ctx.fillText(char, cx, cy);
+  // 描金边：笔画边缘一圈细金，像贴了金箔的漆字
+  ctx.lineWidth = Math.max(0.7, size * 0.02);
+  ctx.strokeStyle = 'rgba(216,178,105,0.6)';
+  ctx.strokeText(char, cx, cy);
 }
 
 function paintFace(ctx: CanvasRenderingContext2D, w: number, faceH: number, r: number, bright: boolean) {
@@ -122,6 +126,25 @@ function paintFace(ctx: CanvasRenderingContext2D, w: number, faceH: number, r: n
   ctx.strokeStyle = 'rgba(120,100,60,0.28)';
   ctx.lineWidth = 1;
   ctx.stroke();
+
+  // 描金内框 + 四角如意角饰（牌身纹理）
+  const inset = w * 0.068;
+  roundRectPath(ctx, inset, inset, w - inset * 2, faceH - inset * 2, r * 0.5);
+  ctx.strokeStyle = 'rgba(201,164,92,0.38)';
+  ctx.lineWidth = Math.max(0.8, w * 0.012);
+  ctx.stroke();
+  const d = w * 0.028;
+  ctx.fillStyle = 'rgba(201,164,92,0.55)';
+  for (const [cx2, cy2] of [
+    [inset, inset], [w - inset, inset],
+    [inset, faceH - inset], [w - inset, faceH - inset],
+  ] as const) {
+    ctx.save();
+    ctx.translate(cx2, cy2);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-d, -d, d * 2, d * 2);
+    ctx.restore();
+  }
 }
 
 function paintTile(ctx: CanvasRenderingContext2D, cell: Cell, w: number, h: number, highlight: boolean) {
