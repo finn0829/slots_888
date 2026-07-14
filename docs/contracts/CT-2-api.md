@@ -1,7 +1,7 @@
-# CT-2 · HTTP API 契约（v0.1 草案）
+# CT-2 · HTTP API 契约（v0.2）
 
 > 生产者：`apps/server`（Fastify）。消费者：`apps/web`、`apps/admin`。
-> 变更记录：2026-07-14 v0.1 初稿。
+> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck。
 
 ## 通用约定
 
@@ -58,13 +58,18 @@ interface PlayerState {
 | `POST /api/admin/configs/:version/publish` | 发布（原 published 版本自动 retired） | → `{ meta }` |
 | `POST /api/admin/configs/:version/rollback` | 回滚到某历史版本（复制为新版本并发布） | → `{ meta }` |
 | `POST /api/admin/simulate` | 蒙特卡洛估算（调 engine.simulate） | `{ config: GameConfig, spins?: number /*默认 200_000*/ }` → `{ rtp, hitRate, fsTriggerRate, avgWinX, maxWinX, stdevX, elapsedMs }` |
-| `GET /api/admin/stats` | 聚合统计 | `?from&to&groupBy=day\|configVersion` → `{ rows: StatRow[] }` |
-| `GET /api/admin/players` | 玩家列表/搜索 | `?query&page` → `{ players, total }` |
-| `POST /api/admin/players/:id/credit` | 补发虚拟币 | `{ amount, note }` → `{ state }` |
-| `POST /api/admin/players/:id/reset` | 重置为初始状态 | → `{ state }` |
-| `POST /api/admin/players/:id/ban` / `unban` | 封禁/解封 | → `{ state }` |
-| `GET /api/admin/spins` | 审计查询 | `?playerId&from&to&minWinX&page` → `{ spins: SpinRow[], total }` |
-| `GET /api/admin/spins/:id` | 单局完整数据（含 result_json，admin 逐步回放） | → `{ spin: SpinRow, result: SpinResult }` |
+| `GET /api/admin/stats` | 聚合统计 | `?groupBy=day\|configVersion`（默认 day）→ `{ rows: StatRow[] }`；groupBy=configVersion 时 key=`v{version}` |
+| `GET /api/admin/stats/summary` | 看板汇总卡 | → `{ today: { spins, totalBet, totalWin, rtp, uniquePlayers, bigWins }, publishedVersion, theoreticalRtp, totalPlayers }`；bigWins = 赢奖 ≥50× 注的 spin 数（BIG_WIN_X=50） |
+| `GET /api/admin/stats/distributions` | 看板分布 | → `{ winTiers: {tier,count,totalWin}[], betLevels: {bet,count}[], cascadeDepth: {depth,count}[], fsTriggerRate }`；各分布 count 加总可与总 spin 数对账 |
+| `GET /api/admin/players` | 玩家列表/搜索 | `?query&page` → `{ players: PlayerAdminRow[], total }`；query 匹配 id 精确或 token 前缀；每页 20，last_seen_at 倒序 |
+| `POST /api/admin/players/:id/credit` | 补发虚拟币 | `{ amount, note? }` → `{ state }`；amount 须为正整数；流水 type=`admin_credit` |
+| `POST /api/admin/players/:id/reset` | 重置为初始状态（余额 10000、清免费旋转/保底） | → `{ state }`；流水 type=`admin_reset`（amount=差额） |
+| `POST /api/admin/players/:id/ban` / `unban` | 封禁/解封（无流水，进操作日志） | → `{ state }` |
+| `GET /api/admin/spins` | 审计查询 | `?playerId&from&to&minWinX&page` → `{ spins: SpinRow[], total }`；每页 20，id 倒序 |
+| `GET /api/admin/spins/:id` | 单局完整数据 + 回放校验 | → `{ spin: SpinRow, result: SpinResult, replayCheck: { match: boolean } }`；服务端用 engine 以 seed+config_version 重跑，比对 totalWin/scatterCount/freeSpinsAwarded/cascades 数 |
+| `GET /api/admin/economy` | 经济参数 | → `{ params: EconomyParams }` |
+| `PUT /api/admin/economy` | 修改经济参数（进操作日志，含前后值） | `{ params: EconomyParams }` → `{ params }`；非法值（非正整数、cooldown>168）→ 400 |
+| `GET /api/admin/ops` | 管理操作日志（只读） | `?type&page` → `{ ops: AdminOpRow[], total }`；每页 50，倒序 |
 
 ```ts
 interface ConfigMeta {
@@ -78,6 +83,30 @@ interface StatRow {
   spins: number; totalBet: number; totalWin: number;
   rtp: number; hitRate: number; fsTriggerRate: number;
   uniquePlayers: number;
+}
+interface PlayerAdminRow {
+  id: number; balance: number; status: 'active' | 'banned';
+  createdAt: string; lastSeenAt: string | null;
+  spins: number; totalBet: number; totalWin: number;   // 聚合自 spins 表
+}
+interface SpinRow {
+  id: number; playerId: number; configVersion: number;
+  mode: 'base' | 'free'; bet: number; totalCost: number;
+  totalWin: number; winX: number;                      // totalWin / bet
+  winTier: string | null; cascades: number;            // 连锁步数
+  createdAt: string;
+}
+interface EconomyParams {
+  dailyBonus: number;            // 默认 1000
+  reliefAmount: number;          // 默认 2000
+  reliefCooldownHours: number;   // 默认 4，上限 168
+}
+interface AdminOpRow {
+  id: number;
+  action: 'login' | 'config_publish' | 'config_rollback' | 'player_credit'
+        | 'player_reset' | 'player_ban' | 'player_unban' | 'economy_update';
+  detail: string;                // JSON：动作参数与前后值
+  createdAt: string;
 }
 ```
 

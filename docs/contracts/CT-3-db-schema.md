@@ -1,7 +1,7 @@
-# CT-3 · 数据库 Schema（SQLite，v0.1 草案）
+# CT-3 · 数据库 Schema（SQLite，v0.2）
 
 > 所有者：`apps/server`（admin/web 一律经 API，不直连库）。
-> 变更记录：2026-07-14 v0.1 初稿。
+> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 加 admin_ops（SRV-9 管理操作日志）与 settings（经济参数）两表。
 > 金额整数（文）。时间统一 UTC ISO-8601 文本。迁移用编号 SQL 文件（`migrations/0001_init.sql`…）。
 
 ```sql
@@ -72,6 +72,21 @@ CREATE TABLE transactions (
 );
 CREATE INDEX idx_tx_player_time ON transactions(player_id, created_at);
 CREATE INDEX idx_tx_type_time   ON transactions(type, created_at);
+
+-- 管理操作日志（SRV-9）：只增不改不删；transactions 只管资金，管理动作一律进这里
+CREATE TABLE admin_ops (
+  id         INTEGER PRIMARY KEY,
+  action     TEXT NOT NULL,   -- login/config_publish/config_rollback/player_credit/player_reset/player_ban/player_unban/economy_update
+  detail     TEXT,            -- JSON：动作参数与前后值
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX idx_ops_action_time ON admin_ops(action, created_at);
+
+-- 运行时可调参数（当前仅 key='economy'，JSON 存 EconomyParams，见 CT-2）
+CREATE TABLE settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 ```
 
 ## 对账不变量（看板与审计的根基）
