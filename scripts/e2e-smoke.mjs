@@ -22,7 +22,14 @@ for (let i = 0; i < 10; i++) {
   await page.waitForFunction(() => !document.querySelector('#spin').disabled, null, { timeout: 60000 });
   await page.waitForTimeout(150);
 }
-const balanceText = await page.textContent('#balance');
+// 等金额滚动动画收敛（两次读数一致才算稳定）
+let balanceText = await page.textContent('#balance');
+for (let i = 0; i < 20; i++) {
+  await page.waitForTimeout(200);
+  const again = await page.textContent('#balance');
+  if (again === balanceText) break;
+  balanceText = again;
+}
 lastBalance = Number(balanceText.replace(/,/g, ''));
 ok(`10 把后余额变化（${balanceText}）`, lastBalance !== 10000 && lastBalance >= 0);
 await page.screenshot({ path: `${SHOT}/web-2-after-spins.png` });

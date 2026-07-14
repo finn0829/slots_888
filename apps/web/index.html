@@ -6,13 +6,19 @@
     <title>雀胡 · 麻将消消乐</title>
   </head>
   <body>
+    <canvas id="fx" aria-hidden="true"></canvas>
     <div id="app">
+      <div class="plaque">
+        <span class="plaque-deco left"></span>
+        <h1>雀 · 胡</h1>
+        <span class="plaque-deco right"></span>
+      </div>
+
       <div class="topbar">
         <div class="stat">
           <span class="label">余额</span>
           <span class="value" id="balance">—</span>
         </div>
-        <div class="title">雀 · 胡</div>
         <div class="stat right">
           <span class="label">本局赢</span>
           <span class="value win" id="win">0</span>
@@ -25,29 +31,36 @@
       </div>
 
       <div class="board-wrap">
-        <canvas id="board"></canvas>
-        <div id="chain"></div>
+        <div class="frame">
+          <span class="corner tl"></span><span class="corner tr"></span>
+          <span class="corner bl"></span><span class="corner br"></span>
+          <canvas id="board" role="img" aria-label="麻将牌盘面"></canvas>
+        </div>
+        <div id="chain" aria-hidden="true"></div>
+        <div id="mult-pop" aria-hidden="true"></div>
       </div>
 
-      <div class="dice-bar">
+      <div class="dice-bar" title="集满骰子必得免费旋转">
         <div id="dice-fill"></div>
         <div id="dice-label">🎲 0/100</div>
       </div>
 
       <div class="controls">
         <div class="bet-group">
-          <button id="bet-minus">−</button>
+          <button id="bet-minus" aria-label="减小下注">−</button>
           <div>
             <div class="label">下注</div>
             <div id="bet">100</div>
           </div>
-          <button id="bet-plus">＋</button>
+          <button id="bet-plus" aria-label="加大下注">＋</button>
         </div>
         <button id="spin">开 局</button>
-        <button id="turbo" title="快速模式">⚡</button>
+        <button id="turbo" title="快速模式" aria-label="快速模式">疾</button>
       </div>
 
       <div class="banner" id="banner">
+        <span class="ribbon r1" aria-hidden="true"></span>
+        <span class="ribbon r2" aria-hidden="true"></span>
         <div id="banner-text"></div>
         <div id="banner-sub"></div>
       </div>
