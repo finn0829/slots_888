@@ -49,7 +49,9 @@ export function defaultPreset(): GameConfig {
     ladderStepAfter: 5,
     freeSpins: { trigger: 4, base: 10, perExtra: 2 },
     anteCostMultiplier: 1.25,
-    anteScatterFactor: 1.12,
+    // ENG-6b：注 ×1.25 换免费旋转触发率 1/155 → 1/93（快 1.67 倍），RTP 略高 0.9%。
+    // 触发概率 ∝ 权重⁴，此值极敏感：1.14→亏 3%，1.17→赚 2%。改动必须跑 analyze.ts 复测。
+    anteScatterFactor: 1.16,
     maxWinX: 5000,
     payoutScale: 0.42,
   };
