@@ -43,3 +43,11 @@
 - 结果：46/46 绿。
 - 决策：ban/unban 无资金变动 → 只进 admin_ops 不进 transactions（对账不变量 1 不受影响）；reset 的流水 amount 记差额（可为负），保证不变量 1 仍成立。
 - 踩坑：无。
+
+## 环节 5 · SRV-6b 审计查询 + 回放校验（服务 ADM-4）
+
+- TDD：4 用例（401 / 过滤分页+winX / minWinX / 回放 match=true + **json_set 篡改 totalWin 后 match=false** + 404）。
+- 实现：列表条件拼接（playerId/from/to/minWinX），连锁数用 `json_array_length(result_json,'$.cascades')` 免解析大 JSON；详情端点用 engine `spin()` 重跑。
+- 结果：50/50 绿。
+- 决策（比计划更强）：计划原定"比对 totalWin/scatterCount 等四字段"的简化口径；读 spin.ts 后确认 free 局起始倍数就是 `cascades[0].chainMultiplier`（必为 ladder 值，`ladderRungOf` 可精确还原 rung），于是升级为**整个 SpinResult JSON.stringify 逐字节比对**。审计强度显著提高，零额外成本。
+- 踩坑：测试文件手滑写了个畸形 import（`from 'vitest' extends never ? …`），一眼修掉。**复盘点：长 session 里连续产出文件时开头模板容易串行。**

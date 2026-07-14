@@ -447,6 +447,57 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     };
   });
 
+  // ── Spin 审计查询与回放校验（SRV-6b）──
+
+  const SPINS_PAGE_SIZE = 20;
+  const SPIN_COLS = `id, player_id AS playerId, config_version AS configVersion, mode, bet,
+    total_cost AS totalCost, total_win AS totalWin,
+    CAST(total_win AS REAL) / NULLIF(bet, 0) AS winX, win_tier AS winTier,
+    json_array_length(result_json, '$.cascades') AS cascades, created_at AS createdAt`;
+
+  app.get('/api/admin/spins', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { playerId?: string; from?: string; to?: string; minWinX?: string; page?: string };
+    const page = Math.max(1, Number(q.page) || 1);
+    const conds: string[] = [];
+    const params: unknown[] = [];
+    if (q.playerId) { conds.push('player_id = ?'); params.push(Number(q.playerId)); }
+    if (q.from) { conds.push('created_at >= ?'); params.push(q.from); }
+    if (q.to) { conds.push('created_at < ?'); params.push(q.to); }
+    if (q.minWinX) { conds.push('CAST(total_win AS REAL) / NULLIF(bet, 0) >= ?'); params.push(Number(q.minWinX)); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const { total } = db.prepare(`SELECT COUNT(*) AS total FROM spins ${where}`).get(...params) as { total: number };
+    const rows = db.prepare(
+      `SELECT ${SPIN_COLS} FROM spins ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    ).all(...params, SPINS_PAGE_SIZE, (page - 1) * SPINS_PAGE_SIZE);
+    return { spins: rows, total };
+  });
+
+  app.get('/api/admin/spins/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = Number((req.params as { id: string }).id);
+    const row = db.prepare(`SELECT ${SPIN_COLS}, seed, result_json FROM spins WHERE id = ?`).get(id) as
+      | ({ configVersion: number; mode: 'base' | 'free'; bet: number; seed: string; result_json: string } & Record<string, unknown>)
+      | undefined;
+    if (!row) return reply.code(404).send(apiError('NOT_FOUND', '记录不存在'));
+
+    const stored = JSON.parse(row.result_json) as SpinResult;
+    const cfgRow = getConfigRow.get(row.configVersion) as ConfigRow;
+    // 回放：spin 是纯函数，free 局起始倍数 = 首个 cascade 的 chainMultiplier（必为 ladder 值）
+    const replayed = spin({
+      seed: row.seed,
+      bet: row.bet,
+      anteEnabled: stored.anteEnabled,
+      mode: row.mode,
+      accumulatedMultiplier: row.mode === 'free' ? (stored.cascades[0]?.chainMultiplier ?? 1) : undefined,
+      config: JSON.parse(cfgRow.config_json) as GameConfig,
+    });
+    const match = JSON.stringify(replayed) === JSON.stringify(stored);
+
+    const { result_json: _omit, ...spinRow } = row;
+    return { spin: spinRow, result: stored, replayCheck: { match } };
+  });
+
   // ── 玩家管理（SRV-6a）──
 
   const PLAYERS_PAGE_SIZE = 20;
