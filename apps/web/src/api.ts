@@ -75,6 +75,15 @@ export async function claimRelief(): Promise<{ amount: number; state: PlayerStat
   return post('/api/claim-relief', undefined, true);
 }
 
+/** 断线重连：最后一局的 SpinResult（用来恢复盘面，不产生任何判定） */
+export async function fetchLastSpin(): Promise<SpinResult | null> {
+  const res = await fetch('/api/last-spin', {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  return (await res.json()).spin as SpinResult | null;
+}
+
 export interface PlayerStats {
   totalSpins: number;
   totalBet: number;

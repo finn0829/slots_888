@@ -4,7 +4,7 @@ import type { SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
 import { Sound } from './sound';
-import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchStats, requestSpin, type PlayerState, type PublicConfig } from './api';
+import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchLastSpin, fetchStats, requestSpin, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -91,6 +91,8 @@ function renderHud() {
   ($('bet-minus') as HTMLButtonElement).disabled = spinning || inFree || auto;
   ($('bet-plus') as HTMLButtonElement).disabled = spinning || inFree || auto;
   ($('spin') as HTMLButtonElement).disabled = spinning || auto;
+  // 免费旋转期间按钮改口播："继续"，否则刷新后玩家不知道该点哪儿把剩下的次数打完
+  $('spin').textContent = inFree ? '继 续' : '开 局';
   // 免费旋转期间 ante 不生效（服务端强制忽略），UI 同步禁用
   ($('ante') as HTMLButtonElement).disabled = spinning || inFree || auto;
   renderAnte();
@@ -109,8 +111,9 @@ function renderHud() {
   ($('claim-daily') as HTMLButtonElement).style.display = canDaily ? 'block' : 'none';
   ($('claim-relief') as HTMLButtonElement).style.display = canRelief ? 'block' : 'none';
 
-  // 空闲吸引：余额够、没在转时 spin 键呼吸
-  $('spin').classList.toggle('attract', !spinning && !auto && !inFree && state.balance >= spinCost());
+  // 空闲吸引：spin 键呼吸。免费旋转不扣钱，所以不看余额——刷新后它必须显眼地招手
+  const idle = !spinning && !auto;
+  $('spin').classList.toggle('attract', idle && (inFree || state.balance >= spinCost()));
 }
 
 function showBanner(text: string, sub: string, tier: WinTier | 'fs' | 'info'): Promise<void> {
@@ -364,7 +367,29 @@ function demoGrid() {
   );
 }
 
+/**
+ * 断线重连（WEB-18）：把上一局的真实终盘摆回盘面，并在还欠着免费旋转时明确告诉玩家怎么继续。
+ * 免费旋转的次数/倍数一直在服务端，本来就不会丢——丢的是"我上一局到底打到哪了"的上下文。
+ */
+async function restoreSession() {
+  const last = await fetchLastSpin();
+  if (last && !spinning) {
+    const finalGrid = last.cascades.at(-1)?.gridAfter;
+    if (finalGrid) board.setGrid(finalGrid);
+  }
+  if (state.freeSpinsRemaining > 0 && !spinning) {
+    const mult = state.accumulatedMultiplier || 1;
+    await showBanner(
+      '免费旋转继续',
+      `还剩 ${state.freeSpinsRemaining} 次 · 累计 ×${mult} · 点「继续」`,
+      'fs',
+    );
+  }
+}
+
 async function init() {
+  // dev 构建暴露盘面给 e2e 断言用（生产构建不挂）
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__board = board;
   board.resize();
   window.addEventListener('resize', () => board.resize());
   board.setGrid(demoGrid());
@@ -380,6 +405,7 @@ async function init() {
   state = await ensureSession();
   renderHud();
   renderPaytable();
+  void restoreSession();
 
   $('bet-minus').onclick = () => { if (betIndex > 0) { betIndex--; renderHud(); renderPaytable(); } };
   $('bet-plus').onclick = () => { if (betIndex < config.betLevels.length - 1) { betIndex++; renderHud(); renderPaytable(); } };

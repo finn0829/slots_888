@@ -242,6 +242,16 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   // ── 玩家个人统计（SRV-10）：数据全部来自 spins/transactions，与后台看板同源可对账 ──
 
+  /** 断线重连：最后一局的完整 SpinResult，供前端恢复盘面（纯展示，不产生判定） */
+  app.get('/api/last-spin', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+    const row = db.prepare(
+      'SELECT result_json FROM spins WHERE player_id = ? ORDER BY id DESC LIMIT 1',
+    ).get(p.id) as { result_json: string } | undefined;
+    return { spin: row ? (JSON.parse(row.result_json) as unknown) : null };
+  });
+
   app.get('/api/stats', async (req, reply) => {
     const p = requirePlayer(req);
     if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));

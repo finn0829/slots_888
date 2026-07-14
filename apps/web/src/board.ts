@@ -205,6 +205,11 @@ export class Board {
     });
   }
 
+  /** 当前盘面（e2e 用来断言"刷新后摆的是上一局的终盘"，像素比对不可靠：牌面有微光动画） */
+  currentGrid(): Grid {
+    return this.sprites.map((col) => col.map((s) => s.cell));
+  }
+
   setGrid(grid: Grid) {
     this.sprites = grid.map((col) => col.map((cell) => ({
       cell, yOff: 0, scale: 1, alpha: 1, highlight: false, landAt: 0,

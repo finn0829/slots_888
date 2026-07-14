@@ -39,12 +39,16 @@ interface PlayerState {
 | `POST /api/spin` | 旋转（唯一改变余额的玩家操作） | `{ bet: number, anteEnabled: boolean }` | `{ spin: SpinResult, state: PlayerState }` |
 | `POST /api/claim-daily` | 每日签到补币（**1,000 文**/日，UTC 日界） | — | `{ amount: number, state: PlayerState }`；已领过 → 409 |
 | `POST /api/claim-relief` | 破产补币：余额 < 最低注(10) 时可领 **2,000 文**，冷却 **4 小时** | — | `{ amount: number, state: PlayerState }`；不满足 → 409 |
+| `GET /api/last-spin` | 该玩家最后一局的完整 SpinResult（断线重连用） | — | `{ spin: SpinResult \| null }`；从未转过 → `{ spin: null }` |
 
 **`POST /api/spin` 服务端语义**（web 不实现任何判定）：
 1. `freeSpinsRemaining > 0` ⇒ 本次为 free spin：忽略请求的 bet/ante，用 `freeSpinBet`，不扣款，次数 −1。
 2. 否则校验 bet ∈ betLevels、余额 ≥ totalCost，扣款。
 3. 生成 seed（CSPRNG）→ 调 engine `spin()` → 事务内：记 spins、记 transactions（bet + win 两条）、更新 PlayerState（免费次数 += freeSpinsAwarded、diceProgress += scatterCount，**满 100 归零并 +10 次免费旋转**、accumulatedMultiplier 持久化）。
 4. 返回 `SpinResult + PlayerState`。余额在任何路径下不得为负。
+
+**断线重连（WEB-18）**：免费旋转状态（剩余次数、累计倍数、freeSpinBet、保底进度）本就在服务端持久化，刷新页面不丢局。但前端需要恢复**演出上下文**——否则玩家看到的是随机 demo 盘面配着"免费旋转还剩 7 次"，无从判断上一局发生了什么。
+`GET /api/last-spin` 返回最后一局的 SpinResult，web 取其最后一次 cascade 的 `gridAfter` 作为开局盘面（即上一局的真实终盘）。这只是**展示恢复**，不产生任何判定；免费旋转要继续，仍须玩家点「开局」再发一次 `POST /api/spin`。
 
 ## 管理侧（全部需管理员鉴权，未登录一律 401）
 
