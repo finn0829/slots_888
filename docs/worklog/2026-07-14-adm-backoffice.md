@@ -84,3 +84,9 @@
 - 实现：PlayersPage（ID/token 前缀搜索、分页表带聚合列与个人实测 RTP、补币 prompt+备注、重置/封禁 confirm、封禁徽章朱砂、"查 spin"跳 `#/audit?playerId=N`）。
 - 验证：tsc 过；Playwright 8 项全过（补币余额变化、封禁徽章+API 状态、解封、操作日志入账、跳转带参）；截图 players.png。
 - 踩坑：**e2e 竞态**——切页后 `waitForSelector('tbody tr')` 匹配到未卸载的看板明细表，基准余额读成了看板单元格，断言永不成立（排查两轮：先确认服务端已生效 → 浏览器内跑谓词才现形）。修法：等待目标页特有元素（`tbody tr button:has-text("补币")`）。**复盘点：SPA 切页断言一律锚定目标页独有选择器，别用泛型选择器。**
+
+## 环节 11 · ADM-7 经济参数页 + ADM-8 操作日志页
+
+- 实现：EconomyPage（三参数表单+行内校验+dirty 才可保存+confirm+生效徽章，页脚说明保底/初始余额为何不在此调）；OpsPage（动作类型下拉过滤+分页+detail JSON 平铺展示）。
+- 验证：tsc 过；Playwright 9 项全过，含完整闭环：改签到额 1000→1100 → **新游客真实签到实得 1100** → 日志出现 economy_update（before/after 齐）→ 还原 1000。截图 economy.png / ops.png。
+- 踩坑：无（吸取环节 10 教训，等待选择器全部锚定页面特有元素，一次过）。

@@ -72,6 +72,17 @@ td.bad, .bad { color: var(--cinnabar-500); font-weight: 700; }
 button.danger { border-color: var(--cinnabar-500); color: var(--cinnabar-500); }
 button.danger:hover:not(:disabled) { background: #F9ECEC; }
 
+/* ── 经济参数（ADM-7）/ 操作日志（ADM-8）── */
+.economy-form { max-width: 560px; }
+.economy-form .field-row { padding: 10px 0; border-bottom: 1px dashed #E4DECB; }
+.economy-form .field-row span { display: flex; flex-direction: column; gap: 2px; }
+.economy-form .field-row small { font-size: 11px; }
+.economy-form input { width: 140px; text-align: right; }
+.note { max-width: 560px; margin-top: 12px; line-height: 1.7; }
+.op-detail { font-size: 12.5px; color: #6B675D; word-break: break-all; }
+.op-detail b { color: var(--ink-900); font-weight: 600; }
+.ops-table td { font-size: 13px; }
+
 /* ── 审计回放（ADM-4）── */
 .filters input[type=date] { padding: 6px 8px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 13px; background: white; }
 .filters input { padding: 7px 10px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 14px; }

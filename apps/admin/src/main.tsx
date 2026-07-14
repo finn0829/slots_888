@@ -6,6 +6,8 @@ import { DashboardPage } from './DashboardPage';
 import { ConfigsPage } from './ConfigsPage';
 import { AuditPage } from './AuditPage';
 import { PlayersPage } from './PlayersPage';
+import { EconomyPage } from './EconomyPage';
+import { OpsPage } from './OpsPage';
 import './style.css';
 
 function Login({ onLogin }: { onLogin: (token: string) => void }) {
@@ -44,6 +46,8 @@ const NAV: Array<{ page: string; label: string; component: () => React.ReactElem
   { page: 'configs', label: '⚙️ 配置管理', component: ConfigsPage },
   { page: 'audit', label: '🔍 审计回放', component: AuditPage },
   { page: 'players', label: '👥 玩家管理', component: PlayersPage },
+  { page: 'economy', label: '💰 经济参数', component: EconomyPage },
+  { page: 'ops', label: '📋 操作日志', component: OpsPage },
 ];
 
 function App() {
