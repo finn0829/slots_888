@@ -13,8 +13,19 @@ services:
       - "8790:8790" # admin 后台
     volumes:
       - .:/app
-      # node_modules 用容器内独立卷，避免与宿主机的产生二进制冲突
+      # node_modules 与 data 全部用容器内独立卷：
+      # ① 避免与宿主机二进制冲突 ② 防止容器内 root 写穿 bind mount 污染宿主机文件属主
       - node_modules:/app/node_modules
+      - nm_engine:/app/packages/engine/node_modules
+      - nm_server:/app/apps/server/node_modules
+      - nm_web:/app/apps/web/node_modules
+      - nm_admin:/app/apps/admin/node_modules
+      - slots_data:/app/data
 
 volumes:
   node_modules:
+  nm_engine:
+  nm_server:
+  nm_web:
+  nm_admin:
+  slots_data:
