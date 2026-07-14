@@ -36,6 +36,19 @@
         <span>累计倍数 <b id="freespins-mult">×1</b></span>
       </div>
 
+      <button class="ante" id="ante" aria-label="加注模式">
+        <span class="ante-box"><input type="checkbox" id="ante-check" tabindex="-1" aria-hidden="true" /></span>
+        <span class="ante-main">
+          <b>加注</b>
+          <span class="ante-cost">实扣 <em id="ante-cost">—</em></span>
+        </span>
+        <span class="ante-gain">
+          <em id="ante-speed">—</em>
+          <span>免费旋转更快</span>
+        </span>
+        <span class="ante-detail" id="ante-detail"></span>
+      </button>
+
       <div class="board-wrap">
         <div class="frame">
           <span class="corner tl"></span><span class="corner tr"></span>
@@ -57,6 +70,7 @@
           <div>
             <div class="label">下注</div>
             <div id="bet">100</div>
+            <div class="bet-cost" id="bet-cost"></div>
           </div>
           <button id="bet-plus" aria-label="加大下注">＋</button>
         </div>

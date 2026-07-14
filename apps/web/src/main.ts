@@ -24,6 +24,9 @@ let autoRemaining = 0;
 let autoStopOnFeature = true;
 let autoStopOnBigWin = false;
 
+// Ante Bet：注 ×1.25 换更高的免费旋转触发率
+let anteEnabled = localStorage.getItem('slots888_ante') === '1';
+
 const board = new Board($('board') as unknown as HTMLCanvasElement);
 const fx = new Fx($('fx') as unknown as HTMLCanvasElement);
 const sound = new Sound();
@@ -49,6 +52,29 @@ function rollTo(el: HTMLElement, to: number, ms = 500) {
   requestAnimationFrame(tick);
 }
 
+/** 一次 spin 的实际扣款（ante 时为注 ×1.25） */
+function spinCost(): number {
+  const bet = config.betLevels[betIndex]!;
+  return anteEnabled ? Math.round(bet * config.anteRule.costMultiplier) : bet;
+}
+
+function renderAnte() {
+  const { costMultiplier, triggerRate, anteTriggerRate, speedup } = config.anteRule;
+  const bet = config.betLevels[betIndex]!;
+  const rate = (r: number) => `1/${Math.round(1 / r)}`;
+
+  $('ante').classList.toggle('on', anteEnabled);
+  ($('ante-check') as HTMLInputElement).checked = anteEnabled;
+  $('ante-cost').textContent = `${fmt(Math.round(bet * costMultiplier))} 文`;
+  $('ante-speed').textContent = `${speedup.toFixed(2)}×`;
+  $('ante-detail').textContent = `免费旋转触发：${rate(triggerRate)} → ${rate(anteTriggerRate)}`;
+
+  // 扣款提示（开启时在下注区显示真实花费）
+  const costEl = $('bet-cost');
+  costEl.style.display = anteEnabled ? 'block' : 'none';
+  costEl.textContent = `实扣 ${fmt(spinCost())}`;
+}
+
 function renderHud() {
   rollTo($('balance'), state.balance, 400);
   $('bet').textContent = String(config.betLevels[betIndex]);
@@ -65,6 +91,9 @@ function renderHud() {
   ($('bet-minus') as HTMLButtonElement).disabled = spinning || inFree || auto;
   ($('bet-plus') as HTMLButtonElement).disabled = spinning || inFree || auto;
   ($('spin') as HTMLButtonElement).disabled = spinning || auto;
+  // 免费旋转期间 ante 不生效（服务端强制忽略），UI 同步禁用
+  ($('ante') as HTMLButtonElement).disabled = spinning || inFree || auto;
+  renderAnte();
 
   // 自动旋转：转起来后按钮变「停止 (剩余次数)」
   const autoBtn = $('auto') as HTMLButtonElement;
@@ -81,7 +110,7 @@ function renderHud() {
   ($('claim-relief') as HTMLButtonElement).style.display = canRelief ? 'block' : 'none';
 
   // 空闲吸引：余额够、没在转时 spin 键呼吸
-  $('spin').classList.toggle('attract', !spinning && !auto && !inFree && state.balance >= config.betLevels[betIndex]!);
+  $('spin').classList.toggle('attract', !spinning && !auto && !inFree && state.balance >= spinCost());
 }
 
 function showBanner(text: string, sub: string, tier: WinTier | 'fs' | 'info'): Promise<void> {
@@ -157,7 +186,7 @@ async function doSpin() {
   let next: 'free' | 'auto' | null = null;
   try {
     const bet = config.betLevels[betIndex]!;
-    const res = await requestSpin(bet);
+    const res = await requestSpin(bet, anteEnabled);
     // 演出期间先显示扣注后的余额，赢奖随连锁滚动
     rollTo($('balance'), res.state.balance - res.spin.totalWin, 250);
     await playResult(res.spin);
@@ -170,7 +199,7 @@ async function doSpin() {
       const bigWin = tier === 'hu' || tier === 'zimo' || tier === 'tianhu';
       if (res.spin.freeSpinsAwarded > 0 && autoStopOnFeature) autoRemaining = 0;
       else if (bigWin && autoStopOnBigWin) autoRemaining = 0;
-      else if (state.balance < config.betLevels[betIndex]!) autoRemaining = 0; // 余额不够，自动停
+      else if (state.balance < spinCost()) autoRemaining = 0; // 余额不够（按 ante 后的实扣算），自动停
     }
     renderHud();
 
@@ -266,6 +295,12 @@ function renderRules() {
       <h4>赢奖分级</h4>
       <p>碰 ≥5× · 杠 ≥10× · 胡了 ≥25× · 自摸 ≥50× · 天胡 ≥100×。单局封顶 <b>${config.maxWinX}×</b>（当前注 = ${fmt(config.maxWinX * bet)} 文）。</p>
     </section>
+    <section>
+      <h4>加注（Ante Bet）</h4>
+      <p>开启后每局多付 <b>${Math.round((config.anteRule.costMultiplier - 1) * 100)}%</b>（当前注 ${bet} → 实扣 <b>${fmt(Math.round(bet * config.anteRule.costMultiplier))}</b> 文），换取<b>更高的骰子出现率</b>：</p>
+      <p>免费旋转触发 <b>1/${Math.round(1 / config.anteRule.triggerRate)}</b> → <b>1/${Math.round(1 / config.anteRule.anteTriggerRate)}</b>，快 <b>${config.anteRule.speedup.toFixed(2)} 倍</b>。</p>
+      <p class="dim">这是唯一影响概率的开关，且完全由你掌控。以上数字由服务端按当前生效配置实时计算，不是宣传话术。</p>
+    </section>
     <section class="rules-rtp">
       <h4>公平性</h4>
       <p>本游戏 <b>RTP（返奖率）约 95.6%</b>，由服务端权威判定，每一局的随机种子与结果全量留档、可审计回放。<b>不存在连败后暗中调整概率的机制</b>。</p>
@@ -348,6 +383,14 @@ async function init() {
 
   $('bet-minus').onclick = () => { if (betIndex > 0) { betIndex--; renderHud(); renderPaytable(); } };
   $('bet-plus').onclick = () => { if (betIndex < config.betLevels.length - 1) { betIndex++; renderHud(); renderPaytable(); } };
+
+  // Ante Bet 开关
+  $('ante').onclick = () => {
+    anteEnabled = !anteEnabled;
+    localStorage.setItem('slots888_ante', anteEnabled ? '1' : '0');
+    if (anteEnabled) sound.pop(2);
+    renderHud();
+  };
   $('spin').onclick = () => void doSpin();
   $('turbo').onclick = () => {
     board.speed = board.speed === 1 ? 2.5 : 1;

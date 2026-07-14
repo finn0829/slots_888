@@ -8,3 +8,4 @@ export { createRng, type Rng } from './rng';
 export { defaultPreset, getPreset, PRESET_IDS, type PresetId } from './config';
 export { simulate, type SimulateOptions, type SimulateStats } from './simulate';
 export { analyze, type AnalyzeOptions, type AnalyzeResult } from './analyze';
+export { freeSpinTriggerRate, anteSpeedup } from './trigger';

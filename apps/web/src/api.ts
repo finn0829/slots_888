@@ -22,6 +22,13 @@ export interface PublicConfig {
   freeSpins: { trigger: number; base: number; perExtra: number };
   /** 各符号三档赔付（×bet 倍数，已含 payoutScale） */
   paytable: Record<string, number[]>;
+  /** Ante Bet：成本倍数与真实触发率（服务端解析计算，随配置同步） */
+  anteRule: {
+    costMultiplier: number;
+    triggerRate: number;
+    anteTriggerRate: number;
+    speedup: number;
+  };
 }
 
 let token = localStorage.getItem(TOKEN_KEY) ?? undefined;
@@ -56,8 +63,8 @@ export async function fetchConfig(): Promise<PublicConfig> {
   return res.json() as Promise<PublicConfig>;
 }
 
-export async function requestSpin(bet: number): Promise<{ spin: SpinResult; state: PlayerState }> {
-  return post('/api/spin', { bet, anteEnabled: false }, true);
+export async function requestSpin(bet: number, anteEnabled = false): Promise<{ spin: SpinResult; state: PlayerState }> {
+  return post('/api/spin', { bet, anteEnabled }, true);
 }
 
 export async function claimDaily(): Promise<{ amount: number; state: PlayerState }> {

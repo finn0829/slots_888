@@ -1,6 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'node:crypto';
-import { getPreset, simulate, spin, type GameConfig, type SpinResult } from '@slots/engine';
+import {
+  anteSpeedup, freeSpinTriggerRate, getPreset, simulate, spin,
+  type GameConfig, type SpinResult,
+} from '@slots/engine';
 import { openDb, type Db } from './db';
 
 declare module 'fastify' {
@@ -141,7 +144,13 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       paytable: Object.fromEntries(
         Object.entries(cfg.symbols).map(([s, v]) => [s, v.pay.map((x) => x * cfg.payoutScale)]),
       ),
-      anteRule: { costMultiplier: cfg.anteCostMultiplier },
+      // 触发率解析计算（非硬编码），后台改权重后公示数字自动同步，不会变成谎言
+      anteRule: {
+        costMultiplier: cfg.anteCostMultiplier,
+        triggerRate: freeSpinTriggerRate(cfg, false),
+        anteTriggerRate: freeSpinTriggerRate(cfg, true),
+        speedup: anteSpeedup(cfg),
+      },
       freeSpins: cfg.freeSpins,
       maxWinX: cfg.maxWinX,
       pity: { target: PITY_TARGET, award: PITY_AWARD },
