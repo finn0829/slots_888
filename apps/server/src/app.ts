@@ -626,8 +626,11 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
   app.get('/api/admin/stats', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
+    const groupBy = (req.query as { groupBy?: string }).groupBy ?? 'day';
+    // 按日或按配置版本聚合，行结构一致（CT-2 StatRow）
+    const keyExpr = groupBy === 'configVersion' ? "'v' || config_version" : 'date(created_at)';
     const rows = db.prepare(
-      `SELECT date(created_at) AS key,
+      `SELECT ${keyExpr} AS key,
               COUNT(*) AS spins,
               SUM(total_cost) AS totalBet,
               SUM(total_win) AS totalWin,
@@ -635,9 +638,48 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
               AVG(CASE WHEN total_win > 0 THEN 1.0 ELSE 0.0 END) AS hitRate,
               SUM(CASE WHEN free_spins_awarded > 0 AND mode = 'base' THEN 1 ELSE 0 END) AS fsTriggers,
               COUNT(DISTINCT player_id) AS uniquePlayers
-       FROM spins GROUP BY date(created_at) ORDER BY key DESC LIMIT 30`,
+       FROM spins GROUP BY ${keyExpr} ORDER BY key DESC LIMIT 30`,
     ).all();
     return { rows };
+  });
+
+  const BIG_WIN_X = 50; // 大奖阈值（≥50× 注），summary 卡与审计口径一致
+  app.get('/api/admin/stats/summary', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const today = db.prepare(
+      `SELECT COUNT(*) AS spins,
+              COALESCE(SUM(total_cost), 0) AS totalBet,
+              COALESCE(SUM(total_win), 0) AS totalWin,
+              CAST(SUM(total_win) AS REAL) / NULLIF(SUM(total_cost), 0) AS rtp,
+              COUNT(DISTINCT player_id) AS uniquePlayers,
+              COALESCE(SUM(CASE WHEN total_win >= bet * ${BIG_WIN_X} THEN 1 ELSE 0 END), 0) AS bigWins
+       FROM spins WHERE date(created_at) = date('now')`,
+    ).get();
+    const pub = db.prepare(
+      "SELECT version, estimated_rtp FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    ).get() as { version: number; estimated_rtp: number | null };
+    const { totalPlayers } = db.prepare('SELECT COUNT(*) AS totalPlayers FROM players').get() as { totalPlayers: number };
+    return { today, publishedVersion: pub.version, theoreticalRtp: pub.estimated_rtp, totalPlayers };
+  });
+
+  app.get('/api/admin/stats/distributions', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const winTiers = db.prepare(
+      `SELECT win_tier AS tier, COUNT(*) AS count, SUM(total_win) AS totalWin
+       FROM spins WHERE win_tier IS NOT NULL GROUP BY win_tier`,
+    ).all();
+    const betLevels = db.prepare(
+      'SELECT bet, COUNT(*) AS count FROM spins GROUP BY bet ORDER BY bet',
+    ).all();
+    const cascadeDepth = db.prepare(
+      `SELECT json_array_length(result_json, '$.cascades') AS depth, COUNT(*) AS count
+       FROM spins GROUP BY depth ORDER BY depth`,
+    ).all();
+    const fs = db.prepare(
+      `SELECT CAST(SUM(CASE WHEN free_spins_awarded > 0 THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) AS rate
+       FROM spins WHERE mode = 'base'`,
+    ).get() as { rate: number | null };
+    return { winTiers, betLevels, cascadeDepth, fsTriggerRate: fs.rate ?? 0 };
   });
 
   return app;

@@ -51,3 +51,10 @@
 - 结果：50/50 绿。
 - 决策（比计划更强）：计划原定"比对 totalWin/scatterCount 等四字段"的简化口径；读 spin.ts 后确认 free 局起始倍数就是 `cascades[0].chainMultiplier`（必为 ladder 值，`ladderRungOf` 可精确还原 rung），于是升级为**整个 SpinResult JSON.stringify 逐字节比对**。审计强度显著提高，零额外成本。
 - 踩坑：测试文件手滑写了个畸形 import（`from 'vitest' extends never ? …`），一眼修掉。**复盘点：长 session 里连续产出文件时开头模板容易串行。**
+
+## 环节 6 · SRV-5 统计聚合扩展（服务 ADM-3）
+
+- TDD：4 用例（401 / summary 可复算+理论 RTP / groupBy=configVersion 换版本出两行 / 各分布加总对账）。
+- 实现：stats 端点加 groupBy（key 表达式二选一，不拼用户输入）；summary（今日+发布版本 estimated_rtp+总玩家）；distributions（win_tier/注档/连锁深度/免费旋转触发率，纯 SQL）。
+- 结果：54/54 绿。服务端 API 面（SRV-5/6/9 + 经济参数）全部就绪。
+- 决策：BIG_WIN_X=50（对齐赢奖分级"自摸"档起点）；理论 RTP 直接用发布版本的 estimated_rtp（模拟器 5×10⁶ 次的结果），不再另跑模拟。
