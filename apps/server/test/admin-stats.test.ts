@@ -70,10 +70,11 @@ describe('统计聚合扩展（SRV-5 / ADM-3）', () => {
     await spinN(a.token, 20, 10);
     const d = (await app.inject({ method: 'GET', url: '/api/admin/stats/distributions', headers: auth() })).json();
 
+    // 注意：基础局可能触发免费旋转，spins 总行数 ≥ 20 —— 分布之间互相对账而不是写死 20
     const betSum = d.betLevels.reduce((s: number, r: { count: number }) => s + r.count, 0);
-    expect(betSum).toBe(20);
     const cascadeSum = d.cascadeDepth.reduce((s: number, r: { count: number }) => s + r.count, 0);
-    expect(cascadeSum).toBe(20);
+    expect(betSum).toBeGreaterThanOrEqual(20);
+    expect(cascadeSum).toBe(betSum);
     // winTiers 只包含中奖档，count ≤ 总数；档位名合法
     const tiers = ['peng', 'gang', 'hu', 'zimo', 'tianhu'];
     expect(d.winTiers.every((r: { tier: string }) => tiers.includes(r.tier))).toBe(true);
