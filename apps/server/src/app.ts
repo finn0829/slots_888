@@ -1,6 +1,6 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomBytes } from 'node:crypto';
-import { spin, type GameConfig, type SpinResult } from '@slots/engine';
+import { getPreset, simulate, spin, type GameConfig, type SpinResult } from '@slots/engine';
 import { openDb, type Db } from './db';
 
 declare module 'fastify' {
@@ -49,6 +49,12 @@ function apiError(code: string, message: string) {
 
 export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false });
+
+  // 空 body + content-type: application/json 不应报 400（publish/rollback 等无参 POST）
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string, done) => {
+    if (body === '') return done(null, {});
+    try { done(null, JSON.parse(body)); } catch (e) { done(e as Error, undefined); }
+  });
   const db = openDb(opts.dbPath ?? process.env.SLOTS_DB ?? 'data/slots.db');
   app.decorate('slotsDb', db);
   const adminPassword = opts.adminPassword ?? process.env.SLOTS_ADMIN_PASSWORD ?? 'admin888';
@@ -201,11 +207,129 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     return { adminToken };
   });
 
-  app.get('/api/admin/stats', async (req, reply) => {
+  function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
     const token = bearer(req);
     if (!token || !adminTokens.has(token)) {
-      return reply.code(401).send(apiError('UNAUTHORIZED', '需要管理员登录'));
+      void reply.code(401).send(apiError('UNAUTHORIZED', '需要管理员登录'));
+      return false;
     }
+    return true;
+  }
+
+  interface ConfigRow {
+    version: number; label: string; status: string;
+    config_json: string; estimated_rtp: number | null;
+    created_at: string; published_at: string | null;
+  }
+  const configMeta = (r: ConfigRow) => ({
+    version: r.version, label: r.label, status: r.status,
+    estimatedRtp: r.estimated_rtp, createdAt: r.created_at, publishedAt: r.published_at,
+  });
+  const getConfigRow = db.prepare('SELECT * FROM game_configs WHERE version = ?');
+
+  app.get('/api/admin/configs', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const rows = db.prepare('SELECT * FROM game_configs ORDER BY version DESC').all() as ConfigRow[];
+    return { configs: rows.map(configMeta) };
+  });
+
+  app.get('/api/admin/configs/:version', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const row = getConfigRow.get(Number((req.params as { version: string }).version)) as ConfigRow | undefined;
+    if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
+    return { config: JSON.parse(row.config_json), meta: configMeta(row) };
+  });
+
+  // 新建草稿：从预设或从历史版本复制
+  app.post('/api/admin/configs', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const body = (req.body ?? {}) as { preset?: string; baseVersion?: number; label?: string; config?: GameConfig };
+    let config: GameConfig;
+    try {
+      if (body.config) config = body.config;
+      else if (body.baseVersion) {
+        const base = getConfigRow.get(body.baseVersion) as ConfigRow | undefined;
+        if (!base) return reply.code(404).send(apiError('NOT_FOUND', '基准版本不存在'));
+        config = JSON.parse(base.config_json);
+      } else config = getPreset(body.preset ?? 'rtp965');
+    } catch (e) {
+      return reply.code(400).send(apiError('BAD_REQUEST', (e as Error).message));
+    }
+    const next = ((db.prepare('SELECT MAX(version) v FROM game_configs').get() as { v: number }).v ?? 0) + 1;
+    db.prepare("INSERT INTO game_configs (version, label, status, config_json) VALUES (?, ?, 'draft', ?)")
+      .run(next, body.label ?? `草稿 v${next}`, JSON.stringify(config));
+    return { meta: configMeta(getConfigRow.get(next) as ConfigRow) };
+  });
+
+  app.put('/api/admin/configs/:version', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const version = Number((req.params as { version: string }).version);
+    const row = getConfigRow.get(version) as ConfigRow | undefined;
+    if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
+    if (row.status !== 'draft') return reply.code(409).send(apiError('CONFLICT', '只有草稿可以修改'));
+    const body = (req.body ?? {}) as { config?: GameConfig; label?: string };
+    if (!body.config) return reply.code(400).send(apiError('BAD_REQUEST', '缺少 config'));
+    db.prepare('UPDATE game_configs SET config_json = ?, label = COALESCE(?, label), estimated_rtp = NULL WHERE version = ?')
+      .run(JSON.stringify(body.config), body.label ?? null, version);
+    return { meta: configMeta(getConfigRow.get(version) as ConfigRow) };
+  });
+
+  const publishTx = db.transaction((version: number) => {
+    db.prepare("UPDATE game_configs SET status = 'retired' WHERE status = 'published'").run();
+    db.prepare("UPDATE game_configs SET status = 'published', published_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE version = ?").run(version);
+  });
+
+  app.post('/api/admin/configs/:version/publish', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const version = Number((req.params as { version: string }).version);
+    const row = getConfigRow.get(version) as ConfigRow | undefined;
+    if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
+    if (row.status !== 'draft') return reply.code(409).send(apiError('CONFLICT', '只有草稿可以发布'));
+    publishTx(version);
+    return { meta: configMeta(getConfigRow.get(version) as ConfigRow) };
+  });
+
+  // 回滚 = 以历史版本复制出新版本并直接发布（留痕，不改写历史）
+  app.post('/api/admin/configs/:version/rollback', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const version = Number((req.params as { version: string }).version);
+    const row = getConfigRow.get(version) as ConfigRow | undefined;
+    if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
+    const next = ((db.prepare('SELECT MAX(version) v FROM game_configs').get() as { v: number }).v ?? 0) + 1;
+    db.prepare("INSERT INTO game_configs (version, label, status, config_json, estimated_rtp) VALUES (?, ?, 'draft', ?, ?)")
+      .run(next, `回滚自 v${version}（${row.label}）`, row.config_json, row.estimated_rtp);
+    publishTx(next);
+    return { meta: configMeta(getConfigRow.get(next) as ConfigRow) };
+  });
+
+  const MAX_SIM_SPINS = 300_000;
+  app.post('/api/admin/simulate', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const body = (req.body ?? {}) as { version?: number; config?: GameConfig; spins?: number };
+    const spins = body.spins ?? 100_000;
+    if (!Number.isInteger(spins) || spins < 1000 || spins > MAX_SIM_SPINS) {
+      return reply.code(400).send(apiError('BAD_REQUEST', `spins 需在 1000–${MAX_SIM_SPINS} 之间`));
+    }
+    let config: GameConfig;
+    if (body.config) config = body.config;
+    else {
+      const row = getConfigRow.get(body.version ?? -1) as ConfigRow | undefined;
+      if (!row) return reply.code(404).send(apiError('NOT_FOUND', '版本不存在'));
+      config = JSON.parse(row.config_json);
+    }
+    const s = simulate(config, { spins, seedPrefix: `admin-sim-${Date.now()}` });
+    if (body.version) {
+      db.prepare('UPDATE game_configs SET estimated_rtp = ? WHERE version = ?').run(s.rtp, body.version);
+    }
+    return {
+      rtp: s.rtp, hitRate: s.hitRate, fsTriggerRate: s.fsTriggerRate,
+      maxWinX: s.maxWinX, stdevX: s.stdevX, featureWinShare: s.featureWinShare,
+      spins: s.spins, elapsedMs: s.elapsedMs,
+    };
+  });
+
+  app.get('/api/admin/stats', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
     const rows = db.prepare(
       `SELECT date(created_at) AS key,
               COUNT(*) AS spins,

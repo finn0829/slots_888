@@ -11,7 +11,8 @@
     "test": "npm run test -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
     "simulate": "npm run simulate -w packages/engine",
-    "e2e": "node scripts/e2e-smoke.mjs"
+    "e2e": "node scripts/e2e-smoke.mjs",
+    "e2e:admin": "node scripts/e2e-admin-configs.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
