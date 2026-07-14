@@ -13,7 +13,8 @@
     "simulate": "npm run simulate -w packages/engine",
     "e2e": "node scripts/e2e-smoke.mjs",
     "e2e:admin": "node scripts/e2e-admin-configs.mjs",
-    "e2e:features": "node scripts/e2e-features.mjs"
+    "e2e:features": "node scripts/e2e-features.mjs",
+    "e2e:stats": "node scripts/e2e-stats.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

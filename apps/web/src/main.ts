@@ -4,7 +4,7 @@ import type { SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
 import { Sound } from './sound';
-import { claimDaily, claimRelief, ensureSession, fetchConfig, requestSpin, type PlayerState, type PublicConfig } from './api';
+import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchStats, requestSpin, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -278,6 +278,50 @@ function toggleRules(show: boolean) {
   $('rules').classList.toggle('show', show);
 }
 
+/** 个人战绩（WEB-13）：诚实展示投入与回报，玩家可自行验证公示的 RTP */
+async function toggleStats(show: boolean) {
+  const el = $('stats');
+  if (!show) { el.classList.remove('show'); return; }
+  $('stats-body').innerHTML = '<p class="dim">统计中…</p>';
+  el.classList.add('show');
+  try {
+    const s = await fetchStats();
+    const netCls = s.net > 0 ? 'up' : s.net < 0 ? 'down' : '';
+    const sign = s.net > 0 ? '+' : '';
+    const rtpTxt = s.rtp === null ? '—' : `${(s.rtp * 100).toFixed(1)}%`;
+    const rtpNote = s.totalSpins < 200
+      ? `样本仅 ${s.totalSpins} 局，波动很大——转够 1000 局以上才会向 95.6% 收敛。`
+      : `理论值 95.6%。你的实测偏差属正常波动，样本越大越接近。`;
+
+    $('stats-body').innerHTML = `
+      <div class="stats-hero ${netCls}">
+        <span class="label">净额</span>
+        <b>${sign}${fmt(s.net)}</b>
+        <span class="unit">文</span>
+      </div>
+      <div class="stats-grid">
+        <div><span>总投入</span><b>${fmt(s.totalBet)}</b></div>
+        <div><span>总赢奖</span><b class="gold">${fmt(s.totalWin)}</b></div>
+        <div><span>总局数</span><b>${fmt(s.totalSpins)}</b></div>
+        <div><span>命中率</span><b>${s.hitRate === null ? '—' : `${(s.hitRate * 100).toFixed(1)}%`}</b></div>
+        <div><span>最大单局</span><b class="gold">${fmt(s.biggestWin)}</b></div>
+        <div><span>最高倍数</span><b class="gold">${s.biggestWinX.toFixed(1)}×</b></div>
+        <div><span>免费旋转</span><b>${fmt(s.freeSpinsPlayed)} 局</b></div>
+        <div><span>领取补贴</span><b>${fmt(s.bonusReceived)}</b></div>
+      </div>
+      <div class="stats-rtp">
+        <div class="stats-rtp-head">
+          <span>你的实测返奖率</span>
+          <b>${rtpTxt}</b>
+        </div>
+        <p class="dim">${rtpNote}</p>
+        <p class="dim">总赢奖 ÷ 总投入。免费旋转不计入投入，签到与救济金不计入赢奖。</p>
+      </div>`;
+  } catch (err) {
+    $('stats-body').innerHTML = `<p class="dim">读取失败：${(err as Error).message}</p>`;
+  }
+}
+
 function demoGrid() {
   const symbols = ['zhong', 'fa', 'east', 'south', 'west', 'north', 'wan', 'tong', 'tiao'] as const;
   return Array.from({ length: 6 }, () =>
@@ -346,12 +390,21 @@ async function init() {
   $('rules-close').onclick = () => toggleRules(false);
   $('rules').onclick = (e) => { if (e.target === $('rules')) toggleRules(false); };
 
+  // 个人战绩
+  $('stats-btn').onclick = () => void toggleStats(true);
+  $('stats-close').onclick = () => void toggleStats(false);
+  $('stats').onclick = (e) => { if (e.target === $('stats')) void toggleStats(false); };
+
   // 经济按钮
   $('claim-daily').onclick = () => void doClaim('daily');
   $('claim-relief').onclick = () => void doClaim('relief');
 
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Escape') { toggleRules(false); $('auto-panel').classList.remove('show'); }
+    if (e.code === 'Escape') {
+      toggleRules(false);
+      void toggleStats(false);
+      $('auto-panel').classList.remove('show');
+    }
     if (e.code === 'Space') {
       e.preventDefault();
       if (autoRemaining > 0) stopAuto();

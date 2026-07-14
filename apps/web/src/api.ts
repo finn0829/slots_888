@@ -67,3 +67,24 @@ export async function claimDaily(): Promise<{ amount: number; state: PlayerState
 export async function claimRelief(): Promise<{ amount: number; state: PlayerState }> {
   return post('/api/claim-relief', undefined, true);
 }
+
+export interface PlayerStats {
+  totalSpins: number;
+  totalBet: number;
+  totalWin: number;
+  net: number;
+  rtp: number | null;
+  hitRate: number | null;
+  biggestWin: number;
+  biggestWinX: number;
+  freeSpinsPlayed: number;
+  bonusReceived: number;
+}
+
+export async function fetchStats(): Promise<PlayerStats> {
+  const res = await fetch('/api/stats', {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<PlayerStats>;
+}

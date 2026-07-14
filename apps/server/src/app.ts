@@ -219,6 +219,46 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     return { spin: result, state: playerState(updated) };
   });
 
+  // ── 玩家个人统计（SRV-10）：数据全部来自 spins/transactions，与后台看板同源可对账 ──
+
+  app.get('/api/stats', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+
+    const s = db.prepare(
+      `SELECT COUNT(*)                                            AS totalSpins,
+              COALESCE(SUM(total_cost), 0)                        AS totalBet,
+              COALESCE(SUM(total_win), 0)                         AS totalWin,
+              COALESCE(MAX(total_win), 0)                         AS biggestWin,
+              COALESCE(MAX(CAST(total_win AS REAL) / NULLIF(bet, 0)), 0) AS biggestWinX,
+              COALESCE(SUM(CASE WHEN mode = 'free' THEN 1 ELSE 0 END), 0) AS freeSpinsPlayed,
+              COALESCE(SUM(CASE WHEN total_win > 0 THEN 1 ELSE 0 END), 0) AS winningSpins
+       FROM spins WHERE player_id = ?`,
+    ).get(p.id) as {
+      totalSpins: number; totalBet: number; totalWin: number;
+      biggestWin: number; biggestWinX: number; freeSpinsPlayed: number; winningSpins: number;
+    };
+
+    // 补贴（签到/救济/管理补币）单列，不混进"赢来的钱"
+    const bonus = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) AS received FROM transactions
+       WHERE player_id = ? AND type IN ('daily_bonus','bankrupt_relief','loss_rebate','admin_credit')`,
+    ).get(p.id) as { received: number };
+
+    return {
+      totalSpins: s.totalSpins,
+      totalBet: s.totalBet,
+      totalWin: s.totalWin,
+      net: s.totalWin - s.totalBet,
+      rtp: s.totalBet > 0 ? s.totalWin / s.totalBet : null,
+      hitRate: s.totalSpins > 0 ? s.winningSpins / s.totalSpins : null,
+      biggestWin: s.biggestWin,
+      biggestWinX: s.biggestWinX,
+      freeSpinsPlayed: s.freeSpinsPlayed,
+      bonusReceived: bonus.received,
+    };
+  });
+
   // ── 经济缓冲（SRV-7）──
 
   /** 发币 + 记流水（原子） */
