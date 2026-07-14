@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { api, TOKEN_KEY } from './api';
+import { TOKEN_KEY } from './api';
+import { useHashRoute, navigate } from './router';
+import { DashboardPage } from './DashboardPage';
 import { ConfigsPage } from './ConfigsPage';
 import './style.css';
-
-interface StatRow {
-  key: string; spins: number; totalBet: number; totalWin: number;
-  rtp: number | null; hitRate: number; fsTriggers: number; uniquePlayers: number;
-}
 
 function Login({ onLogin }: { onLogin: (token: string) => void }) {
   const [password, setPassword] = useState('');
@@ -39,69 +36,32 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
   );
 }
 
-function Dashboard() {
-  const [rows, setRows] = useState<StatRow[] | null>(null);
-  const load = useCallback(async () => {
-    const data = await api<{ rows: StatRow[] }>('/api/admin/stats');
-    setRows(data.rows);
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-
-  const pct = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(2)}%`);
-  return (
-    <div>
-      <h2>数据看板 <span className="hint">按日聚合 · 理论 RTP 95.58%（v1 实测，5×10⁶ 次）</span></h2>
-      {rows === null ? <p>加载中…</p> : rows.length === 0 ? (
-        <p className="empty">还没有任何 spin 数据——去游戏端转两把再回来。</p>
-      ) : (
-        <table>
-          <thead>
-            <tr><th>日期</th><th>Spin 数</th><th>总下注</th><th>总赢奖</th><th>实测 RTP</th><th>命中率</th><th>免费旋转触发</th><th>玩家数</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.key}>
-                <td>{r.key}</td>
-                <td>{r.spins}</td>
-                <td>{r.totalBet?.toLocaleString()}</td>
-                <td>{r.totalWin?.toLocaleString()}</td>
-                <td className={r.rtp != null && r.rtp > 1 ? 'bad' : ''}>{pct(r.rtp)}</td>
-                <td>{pct(r.hitRate)}</td>
-                <td>{r.fsTriggers}</td>
-                <td>{r.uniquePlayers}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-type Page = 'dashboard' | 'configs';
-const NAV: Array<{ id: Page; label: string }> = [
-  { id: 'dashboard', label: '📊 数据看板' },
-  { id: 'configs', label: '⚙️ 配置管理' },
+// 加页面 = 在这里加一行（ADM-6 骨架约定）
+const NAV: Array<{ page: string; label: string; component: () => React.ReactElement }> = [
+  { page: 'dashboard', label: '📊 数据看板', component: DashboardPage },
+  { page: 'configs', label: '⚙️ 配置管理', component: ConfigsPage },
 ];
 
 function App() {
   const [token, setToken] = useState<string | null>(sessionStorage.getItem(TOKEN_KEY));
-  const [page, setPage] = useState<Page>('dashboard');
+  const route = useHashRoute();
   if (!token) return <Login onLogin={setToken} />;
+  const active = NAV.find((n) => n.page === route.page) ?? NAV[0]!;
+  const Page = active.component;
   return (
     <div className="layout">
       <aside>
         <div className="brand">雀 · 胡</div>
         <nav>
           {NAV.map((n) => (
-            <a key={n.id} className={page === n.id ? 'active' : ''} onClick={() => setPage(n.id)}>{n.label}</a>
+            <a key={n.page} className={active.page === n.page ? 'active' : ''} onClick={() => navigate(n.page)}>
+              {n.label}
+            </a>
           ))}
-          <a className="todo">👥 玩家管理（M5）</a>
-          <a className="todo">🔍 审计回放（M5）</a>
         </nav>
       </aside>
       <main>
-        {page === 'dashboard' ? <Dashboard /> : <ConfigsPage />}
+        <Page />
       </main>
     </div>
   );

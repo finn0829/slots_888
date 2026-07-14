@@ -58,3 +58,9 @@
 - 实现：stats 端点加 groupBy（key 表达式二选一，不拼用户输入）；summary（今日+发布版本 estimated_rtp+总玩家）；distributions（win_tier/注档/连锁深度/免费旋转触发率，纯 SQL）。
 - 结果：54/54 绿。服务端 API 面（SRV-5/6/9 + 经济参数）全部就绪。
 - 决策：BIG_WIN_X=50（对齐赢奖分级"自摸"档起点）；理论 RTP 直接用发布版本的 estimated_rtp（模拟器 5×10⁶ 次的结果），不再另跑模拟。
+
+## 环节 7 · ADM-6 hash 路由与应用骨架
+
+- 实现：`router.ts`（useHashRoute + navigate，~30 行，不引路由库）；main.tsx 瘦身为 Login+NAV 表+App；Dashboard 拆到 `DashboardPage.tsx`。加页 = NAV 加一行。
+- 验证：tsc 过（修一处 JSX 命名空间 → React.ReactElement）；Playwright 走查 6 项全过（登录/切页 hash/刷新保持/直达/未知 hash 回退/token 失效回登录）。
+- 踩坑：**沙箱环境起 dev 服务失败（exit 144，端口绑定被拦 + 私有 /tmp）**——后台任务要加 dangerouslyDisableSandbox 才能起服务。复盘点：涉及端口/浏览器的验证步骤直接免沙箱，省两轮排查。
