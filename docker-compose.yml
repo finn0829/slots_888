@@ -1,0 +1,20 @@
+# 一键运行：docker compose up
+# 换机器验证：克隆仓库 → docker compose up → 打开 8788/8789/8790
+services:
+  dev:
+    image: node:24-bookworm-slim
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      SLOTS_DOCKER: "1"
+    ports:
+      - "8788:8788" # server API
+      - "8789:8789" # web 游戏
+      - "8790:8790" # admin 后台
+    volumes:
+      - .:/app
+      # node_modules 用容器内独立卷，避免与宿主机的产生二进制冲突
+      - node_modules:/app/node_modules
+
+volumes:
+  node_modules:
