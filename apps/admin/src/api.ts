@@ -61,6 +61,35 @@ export interface Distributions {
   fsTriggerRate: number;
 }
 
+// ── 审计回放（ADM-4 / SRV-6b）──
+
+export interface SpinRow {
+  id: number; playerId: number; configVersion: number;
+  mode: 'base' | 'free'; bet: number; totalCost: number;
+  totalWin: number; winX: number; winTier: string | null;
+  cascades: number; createdAt: string; seed?: string;
+}
+
+export interface SpinCell { symbol: string; goldMultiplier?: number }
+
+export interface CascadeStep {
+  gridBefore: SpinCell[][];
+  wins: Array<{ symbol: string; count: number; basePayout: number }>;
+  removedPositions: Array<{ col: number; row: number }>;
+  chainMultiplier: number;
+  stepWin: number;
+  gridAfter: SpinCell[][];
+}
+
+export interface SpinDetail {
+  spin: SpinRow;
+  result: {
+    cascades: CascadeStep[]; totalWin: number; scatterCount: number;
+    freeSpinsAwarded: number; goldMultipliers: number[]; winTier: string | null;
+  };
+  replayCheck: { match: boolean };
+}
+
 /** engine GameConfig 的后台可编辑视图（其余字段原样透传） */
 export interface EditableConfig {
   presetId: string;
