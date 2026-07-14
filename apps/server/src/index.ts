@@ -1,9 +1,6 @@
-import Fastify from 'fastify';
-import { ENGINE_VERSION } from '@slots/engine';
+import { buildApp } from './app';
 
-const app = Fastify({ logger: true });
-
-app.get('/healthz', async () => ({ ok: true, engine: ENGINE_VERSION }));
+const app = await buildApp({ logger: true });
 
 // 不读全局 PORT（本机被其他项目占用），用项目专属变量
 const port = Number(process.env.SLOTS_SERVER_PORT ?? 8788);

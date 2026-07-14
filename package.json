@@ -10,14 +10,17 @@
     "dev": "concurrently -n server,web,admin -c blue,green,magenta \"npm run dev -w apps/server\" \"npm run dev -w apps/web\" \"npm run dev -w apps/admin\"",
     "test": "npm run test -ws --if-present",
     "typecheck": "npm run typecheck -ws --if-present",
-    "simulate": "npm run simulate -w packages/engine"
+    "simulate": "npm run simulate -w packages/engine",
+    "e2e": "node scripts/e2e-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
+    "playwright": "^1.61.1",
     "typescript": "^5.8.3"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
-    "esbuild@0.25.12": true
+    "esbuild@0.25.12": true,
+    "better-sqlite3@12.11.1": true
   }
 }

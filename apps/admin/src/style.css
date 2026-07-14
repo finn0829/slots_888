@@ -1,0 +1,48 @@
+/* 后台：象牙白底 + 墨绿导航（CT-4） */
+:root {
+  --felt-700: #1B3B2F;
+  --felt-500: #26523F;
+  --ivory-100: #FBF7EC;
+  --ivory-300: #F5EFE0;
+  --gold-500: #C9A45C;
+  --gold-700: #9A7B3F;
+  --cinnabar-500: #B33A3A;
+  --ink-900: #2B2A26;
+  --kai: "LXGW WenKai", "Kaiti SC", KaiTi, STKaiti, serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { font-family: system-ui, sans-serif; color: var(--ink-900); background: var(--ivory-100); }
+
+.login-wrap { height: 100%; display: grid; place-items: center; background: var(--felt-700); }
+.login-card {
+  background: var(--ivory-100); padding: 40px 36px; border-radius: 14px;
+  border: 1px solid var(--gold-500); display: flex; flex-direction: column; gap: 14px; width: 320px;
+}
+.login-card h1 { font-family: var(--kai); font-size: 22px; color: var(--felt-700); text-align: center; letter-spacing: 4px; }
+.login-card input { padding: 10px 12px; border: 1px solid var(--gold-700); border-radius: 8px; font-size: 15px; }
+.login-card button {
+  padding: 10px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;
+  background: var(--felt-700); color: var(--ivory-100); font-family: var(--kai); letter-spacing: 6px;
+}
+.login-card .error { color: var(--cinnabar-500); text-align: center; font-size: 13px; }
+
+.layout { display: flex; height: 100%; }
+aside { width: 200px; background: var(--felt-700); color: var(--ivory-300); padding: 20px 0; flex-shrink: 0; }
+.brand { font-family: var(--kai); font-size: 20px; text-align: center; color: var(--gold-500); letter-spacing: 4px; margin-bottom: 24px; }
+nav { display: flex; flex-direction: column; }
+nav a { padding: 12px 22px; font-size: 14px; cursor: pointer; }
+nav a.active { background: var(--felt-500); border-left: 3px solid var(--gold-500); }
+nav a.todo { opacity: .45; cursor: not-allowed; }
+
+main { flex: 1; padding: 28px 32px; overflow: auto; }
+main h2 { font-size: 20px; margin-bottom: 18px; color: var(--felt-700); }
+main .hint { font-size: 12px; color: var(--gold-700); font-weight: normal; margin-left: 10px; }
+.empty { color: #888; padding: 30px 0; }
+
+table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+th, td { padding: 10px 14px; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
+th:first-child, td:first-child { text-align: left; }
+thead { background: var(--felt-700); color: var(--ivory-300); }
+tbody tr:nth-child(even) { background: var(--ivory-100); }
+td.bad { color: var(--cinnabar-500); font-weight: 700; }

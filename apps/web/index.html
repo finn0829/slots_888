@@ -2,15 +2,56 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>雀胡 · 麻将消消乐</title>
-    <style>
-      html, body { margin: 0; height: 100%; background: #1B3B2F; }
-      body { display: grid; place-items: center; color: #F5EFE0; font-family: system-ui; }
-    </style>
   </head>
   <body>
-    <div id="app"><h1>雀胡 · WEB 壳已就绪</h1></div>
+    <div id="app">
+      <div class="topbar">
+        <div class="stat">
+          <span class="label">余额</span>
+          <span class="value" id="balance">—</span>
+        </div>
+        <div class="title">雀 · 胡</div>
+        <div class="stat right">
+          <span class="label">本局赢</span>
+          <span class="value win" id="win">0</span>
+        </div>
+      </div>
+
+      <div class="freespins" id="freespins">
+        <span>免费旋转 <b id="freespins-count">0</b> 次</span>
+        <span>累计倍数 <b id="freespins-mult">×1</b></span>
+      </div>
+
+      <div class="board-wrap">
+        <canvas id="board"></canvas>
+        <div id="chain"></div>
+      </div>
+
+      <div class="dice-bar">
+        <div id="dice-fill"></div>
+        <div id="dice-label">🎲 0/100</div>
+      </div>
+
+      <div class="controls">
+        <div class="bet-group">
+          <button id="bet-minus">−</button>
+          <div>
+            <div class="label">下注</div>
+            <div id="bet">100</div>
+          </div>
+          <button id="bet-plus">＋</button>
+        </div>
+        <button id="spin">开 局</button>
+        <button id="turbo" title="快速模式">⚡</button>
+      </div>
+
+      <div class="banner" id="banner">
+        <div id="banner-text"></div>
+        <div id="banner-sub"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
