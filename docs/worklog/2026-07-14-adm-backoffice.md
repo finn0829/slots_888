@@ -64,3 +64,10 @@
 - 实现：`router.ts`（useHashRoute + navigate，~30 行，不引路由库）；main.tsx 瘦身为 Login+NAV 表+App；Dashboard 拆到 `DashboardPage.tsx`。加页 = NAV 加一行。
 - 验证：tsc 过（修一处 JSX 命名空间 → React.ReactElement）；Playwright 走查 6 项全过（登录/切页 hash/刷新保持/直达/未知 hash 回退/token 失效回登录）。
 - 踩坑：**沙箱环境起 dev 服务失败（exit 144，端口绑定被拦 + 私有 /tmp）**——后台任务要加 dangerouslyDisableSandbox 才能起服务。复盘点：涉及端口/浏览器的验证步骤直接免沙箱，省两轮排查。
+
+## 环节 8 · ADM-3a/3b 看板升级
+
+- 实现：4 汇总卡（今日 spin/实测 vs 理论 RTP/活跃玩家/大奖≥50×）；纯 SVG RTP 折线（理论虚线基准、按日/按版本 tab）；五档赢奖·注档·连锁深度条形 + 免费旋转触发率卡；明细表保留。api.ts 补 SummaryData/Distributions/StatRow 类型。
+- 验证：tsc 过；Playwright 造 25 局真实数据后走查 9 项全过（卡片数、曲线、虚线、分布档数、按版本聚合、与 stats API 对账、无 JS 异常）；截图 `docs/screenshots/adm-m6/dashboard-*.png` 目检通过。
+- 决策：不引图表库——一条折线+条形图 90 行 SVG/CSS 搞定，避免为看板拖进依赖；分布条形用 CSS grid 而非 SVG（文字对齐更省事）。
+- 踩坑：无。

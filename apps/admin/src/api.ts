@@ -40,6 +40,27 @@ export interface SimResult {
   spins: number; elapsedMs: number;
 }
 
+// ── 看板（ADM-3 / SRV-5）──
+
+export interface StatRow {
+  key: string; spins: number; totalBet: number; totalWin: number;
+  rtp: number | null; hitRate: number; fsTriggers: number; uniquePlayers: number;
+}
+
+export interface SummaryData {
+  today: { spins: number; totalBet: number; totalWin: number; rtp: number | null; uniquePlayers: number; bigWins: number };
+  publishedVersion: number;
+  theoreticalRtp: number | null;
+  totalPlayers: number;
+}
+
+export interface Distributions {
+  winTiers: Array<{ tier: string; count: number; totalWin: number }>;
+  betLevels: Array<{ bet: number; count: number }>;
+  cascadeDepth: Array<{ depth: number; count: number }>;
+  fsTriggerRate: number;
+}
+
 /** engine GameConfig 的后台可编辑视图（其余字段原样透传） */
 export interface EditableConfig {
   presetId: string;

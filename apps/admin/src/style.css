@@ -48,6 +48,27 @@ tbody tr:nth-child(even) { background: var(--ivory-100); }
 td.bad, .bad { color: var(--cinnabar-500); font-weight: 700; }
 .error-line { color: var(--cinnabar-500); margin-bottom: 10px; }
 
+/* ── 看板（ADM-3）── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.card { background: white; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.card .num { font-size: 28px; font-weight: 700; color: var(--felt-700); font-variant-numeric: tabular-nums; }
+.card .sub, .panel .sub { font-size: 12px; color: #8A867C; margin-top: 4px; }
+.panel { background: white; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+.panel h3 { font-size: 15px; color: var(--felt-700); margin-bottom: 12px; }
+.panel table { box-shadow: none; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head h3 { margin-bottom: 0; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.chart { width: 100%; height: auto; display: block; }
+.tabs { display: flex; gap: 6px; }
+.bars { display: flex; flex-direction: column; gap: 7px; }
+.bar-row { display: grid; grid-template-columns: 56px 1fr 130px; gap: 10px; align-items: center; font-size: 13px; }
+.bar-label { text-align: right; color: var(--ink-900); font-family: var(--kai); }
+.bar-track { background: var(--ivory-300); border-radius: 5px; height: 14px; overflow: hidden; }
+.bar-fill { background: var(--felt-500); height: 100%; border-radius: 5px; min-width: 2px; }
+.bar-count { color: #6B675D; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.big-stat { font-size: 26px; font-weight: 700; color: var(--felt-700); font-variant-numeric: tabular-nums; }
+
 /* ── 配置管理 ── */
 .actions-row { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
 .actions-row select, .editor input {
