@@ -19,6 +19,11 @@ const BET_LEVELS = [10, 20, 50, 100, 200, 500];
 const INITIAL_BALANCE = 10000;
 const PITY_TARGET = 100;
 const PITY_AWARD = 10;
+// 经济缓冲（SRV-7，数值见 docs/BACKLOG.md 经济数值表）
+const DAILY_BONUS = 1000;
+const RELIEF_AMOUNT = 2000;
+const RELIEF_COOLDOWN_HOURS = 4;
+const MIN_BET = BET_LEVELS[0]!;
 
 interface PlayerRow {
   id: number;
@@ -29,6 +34,23 @@ interface PlayerRow {
   free_spin_bet: number;
   accumulated_multiplier: number;
   dice_progress: number;
+  last_daily_claim_at: string | null;
+  last_relief_at: string | null;
+}
+
+/** 签到按 UTC 日界；同一天只能领一次 */
+function canClaimDaily(p: PlayerRow): boolean {
+  if (!p.last_daily_claim_at) return true;
+  return p.last_daily_claim_at.slice(0, 10) !== new Date().toISOString().slice(0, 10);
+}
+
+/** 破产补币：余额不够最低注，且冷却已过 */
+function canClaimRelief(p: PlayerRow): boolean {
+  if (p.balance >= MIN_BET) return false;
+  if (p.free_spins_remaining > 0) return false; // 还有免费旋转可打，不算破产
+  if (!p.last_relief_at) return true;
+  const elapsed = Date.now() - new Date(`${p.last_relief_at.replace(' ', 'T')}Z`).getTime();
+  return elapsed >= RELIEF_COOLDOWN_HOURS * 3600_000;
 }
 
 function playerState(p: PlayerRow) {
@@ -40,6 +62,8 @@ function playerState(p: PlayerRow) {
     accumulatedMultiplier: p.accumulated_multiplier,
     diceProgress: p.dice_progress,
     status: p.status,
+    canClaimDaily: canClaimDaily(p),
+    canClaimRelief: canClaimRelief(p),
   };
 }
 
@@ -193,6 +217,39 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
 
     const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
     return { spin: result, state: playerState(updated) };
+  });
+
+  // ── 经济缓冲（SRV-7）──
+
+  /** 发币 + 记流水（原子） */
+  const grant = db.transaction((p: PlayerRow, amount: number, type: 'daily_bonus' | 'bankrupt_relief', stampCol: 'last_daily_claim_at' | 'last_relief_at') => {
+    const after = p.balance + amount;
+    db.prepare(`UPDATE players SET balance = ?, ${stampCol} = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`).run(after, p.id);
+    db.prepare('INSERT INTO transactions (player_id, type, amount, balance_after) VALUES (?, ?, ?, ?)')
+      .run(p.id, type, amount, after);
+  });
+
+  app.post('/api/claim-daily', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+    if (p.status === 'banned') return reply.code(403).send(apiError('BANNED', '账号已被封禁'));
+    if (!canClaimDaily(p)) return reply.code(409).send(apiError('CONFLICT', '今天已经签到过了，明天再来'));
+    grant(p, DAILY_BONUS, 'daily_bonus', 'last_daily_claim_at');
+    const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
+    return { amount: DAILY_BONUS, state: playerState(updated) };
+  });
+
+  app.post('/api/claim-relief', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+    if (p.status === 'banned') return reply.code(403).send(apiError('BANNED', '账号已被封禁'));
+    if (!canClaimRelief(p)) {
+      const why = p.balance >= MIN_BET ? '余额还够玩，暂不能领取救济' : `救济金冷却中（每 ${RELIEF_COOLDOWN_HOURS} 小时一次）`;
+      return reply.code(409).send(apiError('CONFLICT', why));
+    }
+    grant(p, RELIEF_AMOUNT, 'bankrupt_relief', 'last_relief_at');
+    const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
+    return { amount: RELIEF_AMOUNT, state: playerState(updated) };
   });
 
   // ── 管理侧 ──

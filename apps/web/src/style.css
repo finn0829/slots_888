@@ -276,7 +276,8 @@ body::after {
   box-shadow: inset 0 1px 4px rgba(0,0,0,0.4);
 }
 .bet-group .label { font-size: 11px; color: var(--gold-300); text-align: center; }
-#bet { min-width: 44px; text-align: center; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#bet { min-width: 38px; text-align: center; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bet-group > button { padding: 6px 9px; }
 button {
   font-family: inherit;
   border: 1px solid var(--gold-700);
@@ -291,12 +292,13 @@ button:disabled { opacity: .4; cursor: default; }
 button:focus-visible, .banner:focus-visible { outline: 2px solid var(--gold-300); outline-offset: 2px; }
 #spin {
   flex: 1;
+  min-width: 0;
   font-family: var(--kai);
-  font-size: 25px;
+  font-size: clamp(20px, 5.5vw, 25px);
   font-weight: 700;
-  letter-spacing: 9px;
-  text-indent: 9px;
-  padding: 14px 0;
+  letter-spacing: 6px;
+  text-indent: 6px;
+  padding: 14px 4px;
   color: var(--ivory-100);
   text-shadow: 0 1px 2px rgba(0,0,0,.5);
   background:
@@ -323,6 +325,126 @@ button:focus-visible, .banner:focus-visible { outline: 2px solid var(--gold-300)
   border-color: var(--gold-300);
   box-shadow: 0 0 16px rgba(227,201,138,0.45);
 }
+
+/* ── 经济按钮（签到 / 救济） ── */
+.claim { display: none; gap: 6px; }
+.claim button {
+  padding: 5px 11px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--gold-500);
+  background: linear-gradient(180deg, rgba(201,164,92,0.25), rgba(154,123,63,0.2));
+  color: var(--gold-300);
+  white-space: nowrap;
+  animation: claimPulse 2.4s ease-in-out infinite;
+}
+@keyframes claimPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(227,201,138,0); }
+  50% { box-shadow: 0 0 14px rgba(227,201,138,0.45); }
+}
+
+/* ── 控制条：侧边按钮组 2×2 网格（窄屏不溢出） + 自动旋转面板 ── */
+.controls { position: relative; }
+.side-btns {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+.side-btns button {
+  min-width: 44px;
+  padding: 6px 4px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+#auto {
+  font-family: var(--kai);
+  font-size: 14px;
+  background: rgba(0,0,0,0.22);
+}
+#auto.on {
+  background: linear-gradient(180deg, var(--cinnabar-500), var(--cinnabar-700));
+  border-color: var(--gold-500);
+  color: var(--ivory-100);
+  font-variant-numeric: tabular-nums;
+}
+#info { font-size: 17px; background: rgba(0,0,0,0.22); }
+
+.auto-panel {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  width: 250px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(165deg, rgba(30,21,11,0.97), rgba(20,14,7,0.98));
+  border: 1px solid var(--gold-700);
+  box-shadow: inset 0 0 0 2px rgba(201,164,92,0.28), 0 12px 30px rgba(0,0,0,0.6);
+  z-index: 6;
+}
+.auto-panel.show { display: block; }
+.auto-panel h4 {
+  font-family: var(--kai); font-size: 16px; color: var(--gold-300);
+  letter-spacing: 3px; margin-bottom: 10px; text-align: center;
+}
+.auto-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.auto-counts button { padding: 8px 0; font-size: 14px; }
+.auto-panel label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; padding: 4px 0; cursor: pointer; color: var(--ivory-300);
+}
+.auto-panel .dim { font-size: 11px; color: rgba(245,239,224,0.5); margin-top: 6px; line-height: 1.6; }
+
+/* 空闲吸引：spin 键呼吸 */
+#spin.attract { animation: attract 2.6s ease-in-out infinite; }
+@keyframes attract {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(227,201,138,0.28), 0 4px 0 var(--cinnabar-700), 0 8px 22px rgba(0,0,0,.45); }
+  50% { box-shadow: inset 0 0 0 2px rgba(227,201,138,0.6), 0 4px 0 var(--cinnabar-700), 0 8px 30px rgba(227,201,138,0.3); }
+}
+
+/* ── 规则页 ── */
+.rules {
+  display: none;
+  position: fixed; inset: 0;
+  z-index: 20;
+  background: rgba(10,18,14,0.85);
+  backdrop-filter: blur(3px);
+  padding: 20px 14px;
+  overflow-y: auto;
+}
+.rules.show { display: block; }
+.rules-card {
+  max-width: 520px;
+  margin: 0 auto;
+  border-radius: 14px;
+  background: linear-gradient(170deg, #241a0e, #16100a);
+  border: 1px solid var(--gold-700);
+  box-shadow: inset 0 0 0 2px rgba(201,164,92,0.3), 0 16px 40px rgba(0,0,0,0.6);
+  padding: 18px 20px 24px;
+}
+.rules-card header {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--gold-700);
+  padding-bottom: 10px; margin-bottom: 4px;
+}
+.rules-card h2 {
+  font-family: var(--kai); font-size: 20px; color: var(--gold-300); letter-spacing: 4px;
+}
+#rules-close { padding: 4px 10px; font-size: 15px; }
+.rules section { padding: 14px 0; border-bottom: 1px solid rgba(201,164,92,0.14); }
+.rules section:last-child { border-bottom: none; }
+.rules h4 {
+  font-family: var(--kai); font-size: 16px; color: var(--gold-500);
+  margin-bottom: 7px; letter-spacing: 2px;
+}
+.rules h4 small { font-size: 11px; color: rgba(245,239,224,0.5); letter-spacing: 0; margin-left: 6px; }
+.rules p { font-size: 13.5px; line-height: 1.85; color: var(--ivory-300); margin-bottom: 5px; }
+.rules p b { color: var(--gold-300); }
+.rules .dim { color: rgba(245,239,224,0.45); font-size: 12px; }
+.rules-pt { margin-top: 8px; }
+.rules-pt .pt-row { border-bottom-color: rgba(201,164,92,0.1); }
+.rules-rtp { background: rgba(201,164,92,0.07); border-radius: 8px; padding: 12px 14px !important; margin-top: 6px; }
+.pt-sym.gold { color: var(--cinnabar-500); display: inline-block; padding: 0 6px; }
 
 /* ── 桌面侧栏赔付表（≥1100px 显示，利用两侧空间） ── */
 #paytable {

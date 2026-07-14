@@ -20,6 +20,10 @@
           <span class="label">余额</span>
           <span class="value" id="balance">—</span>
         </div>
+        <div class="claim" id="claim">
+          <button id="claim-daily" title="每日签到">签到 +1000</button>
+          <button id="claim-relief" title="破产救济金">补给 +2000</button>
+        </div>
         <div class="stat right">
           <span class="label">本局赢</span>
           <span class="value win" id="win">0</span>
@@ -56,8 +60,30 @@
           <button id="bet-plus" aria-label="加大下注">＋</button>
         </div>
         <button id="spin">开 局</button>
-        <button id="turbo" title="快速模式" aria-label="快速模式">疾</button>
-        <button id="mute" title="音效开关" aria-label="音效开关">音</button>
+        <div class="side-btns">
+          <button id="auto" title="自动旋转" aria-label="自动旋转">自动</button>
+          <button id="turbo" title="快速模式" aria-label="快速模式">疾</button>
+          <button id="mute" title="音效开关" aria-label="音效开关">音</button>
+          <button id="info" title="游戏规则" aria-label="游戏规则">ⓘ</button>
+        </div>
+
+        <div class="auto-panel" id="auto-panel">
+          <h4>自动旋转</h4>
+          <div class="auto-counts" id="auto-counts"></div>
+          <label><input type="checkbox" id="auto-stop-feature" /> 触发免费旋转时停止</label>
+          <label><input type="checkbox" id="auto-stop-bigwin" /> 赢得大奖（≥25×）时停止</label>
+          <p class="dim">余额不足会自动停止 · 空格键随时中断</p>
+        </div>
+      </div>
+
+      <div class="rules" id="rules">
+        <div class="rules-card">
+          <header>
+            <h2>雀胡 · 玩法说明</h2>
+            <button id="rules-close" aria-label="关闭">✕</button>
+          </header>
+          <div id="rules-body"></div>
+        </div>
       </div>
 
       <div class="banner" id="banner">

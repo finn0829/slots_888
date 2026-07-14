@@ -10,6 +10,8 @@ export interface PlayerState {
   accumulatedMultiplier: number;
   diceProgress: number;
   status: 'active' | 'banned';
+  canClaimDaily: boolean;
+  canClaimRelief: boolean;
 }
 
 export interface PublicConfig {
@@ -25,13 +27,15 @@ export interface PublicConfig {
 let token = localStorage.getItem(TOKEN_KEY) ?? undefined;
 
 async function post<T>(url: string, body: unknown, auth = false): Promise<T> {
+  const hasBody = body !== undefined;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      'content-type': 'application/json',
+      // 无 body 时不声明 content-type：Fastify 会因空 body 报 400
+      ...(hasBody ? { 'content-type': 'application/json' } : {}),
       ...(auth && token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    body: hasBody ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -54,4 +58,12 @@ export async function fetchConfig(): Promise<PublicConfig> {
 
 export async function requestSpin(bet: number): Promise<{ spin: SpinResult; state: PlayerState }> {
   return post('/api/spin', { bet, anteEnabled: false }, true);
+}
+
+export async function claimDaily(): Promise<{ amount: number; state: PlayerState }> {
+  return post('/api/claim-daily', undefined, true);
+}
+
+export async function claimRelief(): Promise<{ amount: number; state: PlayerState }> {
+  return post('/api/claim-relief', undefined, true);
 }

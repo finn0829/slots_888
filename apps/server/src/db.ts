@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS players (
   accumulated_multiplier  REAL    NOT NULL DEFAULT 0,
   dice_progress           INTEGER NOT NULL DEFAULT 0,
   last_daily_claim_at     TEXT,
+  last_relief_at          TEXT,
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   last_seen_at            TEXT
 );
@@ -73,6 +74,12 @@ export function openDb(dbPath: string): Db {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+
+  // 轻量迁移：老库补列（SRV-7 破产补币冷却）
+  const cols = db.prepare('PRAGMA table_info(players)').all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'last_relief_at')) {
+    db.exec('ALTER TABLE players ADD COLUMN last_relief_at TEXT');
+  }
 
   // 首次启动：把默认预设发布为 version 1
   const hasPublished = db.prepare("SELECT 1 FROM game_configs WHERE status = 'published'").get();

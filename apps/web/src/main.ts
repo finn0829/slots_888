@@ -4,7 +4,7 @@ import type { SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
 import { Sound } from './sound';
-import { ensureSession, fetchConfig, requestSpin, type PlayerState, type PublicConfig } from './api';
+import { claimDaily, claimRelief, ensureSession, fetchConfig, requestSpin, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -17,6 +17,12 @@ let state: PlayerState;
 let config: PublicConfig;
 let betIndex = 3; // 默认 100
 let spinning = false;
+
+// 自动旋转
+const AUTO_COUNTS = [10, 25, 50, 100];
+let autoRemaining = 0;
+let autoStopOnFeature = true;
+let autoStopOnBigWin = false;
 
 const board = new Board($('board') as unknown as HTMLCanvasElement);
 const fx = new Fx($('fx') as unknown as HTMLCanvasElement);
@@ -55,9 +61,27 @@ function renderHud() {
   $('dice-fill').style.width = `${pct}%`;
   $('dice-label').textContent = `🎲 ${state.diceProgress}/${config.pity.target}`;
   const inFree = fs > 0;
-  ($('bet-minus') as HTMLButtonElement).disabled = spinning || inFree;
-  ($('bet-plus') as HTMLButtonElement).disabled = spinning || inFree;
-  ($('spin') as HTMLButtonElement).disabled = spinning;
+  const auto = autoRemaining > 0;
+  ($('bet-minus') as HTMLButtonElement).disabled = spinning || inFree || auto;
+  ($('bet-plus') as HTMLButtonElement).disabled = spinning || inFree || auto;
+  ($('spin') as HTMLButtonElement).disabled = spinning || auto;
+
+  // 自动旋转：转起来后按钮变「停止 (剩余次数)」
+  const autoBtn = $('auto') as HTMLButtonElement;
+  autoBtn.textContent = auto ? `停 ${autoRemaining}` : '自动';
+  autoBtn.classList.toggle('on', auto);
+  autoBtn.disabled = inFree;
+
+  // 经济按钮：仅在可领时出现
+  const claimEl = $('claim');
+  const canDaily = state.canClaimDaily;
+  const canRelief = state.canClaimRelief;
+  claimEl.style.display = (canDaily || canRelief) && !auto ? 'flex' : 'none';
+  ($('claim-daily') as HTMLButtonElement).style.display = canDaily ? 'block' : 'none';
+  ($('claim-relief') as HTMLButtonElement).style.display = canRelief ? 'block' : 'none';
+
+  // 空闲吸引：余额够、没在转时 spin 键呼吸
+  $('spin').classList.toggle('attract', !spinning && !auto && !inFree && state.balance >= config.betLevels[betIndex]!);
 }
 
 function showBanner(text: string, sub: string, tier: WinTier | 'fs' | 'info'): Promise<void> {
@@ -119,12 +143,18 @@ async function playResult(result: SpinResult) {
   }
 }
 
+function stopAuto() {
+  autoRemaining = 0;
+  renderHud();
+}
+
 async function doSpin() {
   if (spinning) return;
   spinning = true;
   rolling.set($('win'), 0);
   $('win').textContent = '0';
   renderHud();
+  let next: 'free' | 'auto' | null = null;
   try {
     const bet = config.betLevels[betIndex]!;
     const res = await requestSpin(bet);
@@ -132,21 +162,46 @@ async function doSpin() {
     rollTo($('balance'), res.state.balance - res.spin.totalWin, 250);
     await playResult(res.spin);
     state = res.state;
-    renderHud();
-    if (state.freeSpinsRemaining > 0) {
-      spinning = false;
-      setTimeout(() => void doSpin(), 550 / board.speed);
-      return;
+
+    // 自动旋转的停止条件（免费旋转期间不消耗自动次数）
+    if (autoRemaining > 0 && res.spin.mode === 'base') {
+      autoRemaining--;
+      const tier = res.spin.winTier;
+      const bigWin = tier === 'hu' || tier === 'zimo' || tier === 'tianhu';
+      if (res.spin.freeSpinsAwarded > 0 && autoStopOnFeature) autoRemaining = 0;
+      else if (bigWin && autoStopOnBigWin) autoRemaining = 0;
+      else if (state.balance < config.betLevels[betIndex]!) autoRemaining = 0; // 余额不够，自动停
     }
+    renderHud();
+
+    if (state.freeSpinsRemaining > 0) next = 'free';
+    else if (autoRemaining > 0) next = 'auto';
   } catch (err) {
+    autoRemaining = 0;
     const e = err as Error & { status?: number };
     if (e.status === 402) {
-      await showBanner('余额不足', '明日签到可补币（后续开放）', 'info');
+      await showBanner('余额不足', state.canClaimRelief ? '点「补给」领救济金' : '明日签到可补币', 'info');
     } else {
       await showBanner('出错了', e.message, 'info');
     }
   } finally {
     spinning = false;
+    renderHud();
+  }
+  if (next) setTimeout(() => void doSpin(), (next === 'free' ? 550 : 350) / board.speed);
+}
+
+/** 领取签到/救济 */
+async function doClaim(kind: 'daily' | 'relief') {
+  if (spinning) return;
+  try {
+    const res = kind === 'daily' ? await claimDaily() : await claimRelief();
+    state = res.state;
+    sound.gong();
+    await showBanner(kind === 'daily' ? '每日签到' : '救济金', `+${fmt(res.amount)} 文`, 'info');
+  } catch (err) {
+    await showBanner('领取失败', (err as Error).message, 'info');
+  } finally {
     renderHud();
   }
 }
@@ -163,18 +218,64 @@ const PT_SYMBOLS: Array<{ key: string; char: string; cls: string }> = [
   { key: 'tong', char: '筒', cls: 'blue' },
   { key: 'tiao', char: '條', cls: 'green' },
 ];
-function renderPaytable() {
-  const bet = config.betLevels[betIndex]!;
+function paytableRows(bet: number) {
+  const head = `<div class="pt-row pt-head"><b></b><span>8+</span><span>10+</span><span>12+</span></div>`;
   const rows = PT_SYMBOLS.map(({ key, char, cls }) => {
     const pays = config.paytable[key] ?? [0, 0, 0];
     const cells = pays.map((p) => `<span>${fmt(p * bet)}</span>`).join('');
     return `<div class="pt-row"><b class="pt-sym ${cls}">${char}</b>${cells}</div>`;
   }).join('');
+  return head + rows;
+}
+
+function renderPaytable() {
+  const bet = config.betLevels[betIndex]!;
   $('paytable').innerHTML = `
     <h3>赔付表 <small>注 ${bet}</small></h3>
-    <div class="pt-row pt-head"><b></b><span>8+</span><span>10+</span><span>12+</span></div>
-    ${rows}
+    ${paytableRows(bet)}
     <p class="pt-note">白板＝百搭 · 骰子 ≥${config.freeSpins.trigger} 触发免费旋转<br>集满 ${config.pity.target} 骰子必得 ${config.pity.award} 次 · 封顶 ${fmt(config.maxWinX * bet)}</p>`;
+}
+
+/** 游戏内规则页（手机端唯一能看到赔付表的地方） */
+function renderRules() {
+  const bet = config.betLevels[betIndex]!;
+  $('rules-body').innerHTML = `
+    <section>
+      <h4>怎么赢</h4>
+      <p>全盘 30 张牌，<b>同一种牌出现 8 张以上即中奖</b>，不看位置。中奖的牌会被「打出去」，上方的牌落下补位——可能再次凑成中奖，形成<b>连锁</b>。</p>
+    </section>
+    <section>
+      <h4>赔付表 <small>按当前注 ${bet} 文换算</small></h4>
+      <div class="rules-pt">${paytableRows(bet)}</div>
+    </section>
+    <section>
+      <h4>连锁倍数</h4>
+      <p>同一局里每连锁一次，倍数递增：<b>×1 → ×2 → ×3 → ×5 → ×10</b>。免费旋转期间倍数<b>整局累加、不重置</b>——这是所有大奖的来源。</p>
+    </section>
+    <section>
+      <h4>特殊牌</h4>
+      <p><b class="pt-sym gold">百搭</b>（白板）替代任意普通牌凑数，一张可同时算进多个中奖组。</p>
+      <p><b>🎲 骰子</b>散落任意位置，出现 ≥${config.freeSpins.trigger} 个触发<b>免费旋转 ${config.freeSpins.base} 次</b>（每多 1 个 +${config.freeSpins.perExtra} 次）。</p>
+      <p><b>金牌</b>只在免费旋转出现，牌面倍数<b>相加</b>后乘到该次总赢奖。</p>
+    </section>
+    <section>
+      <h4>骰子收集（保底）</h4>
+      <p>每出现 1 个骰子，进度条 +1（不足 ${config.freeSpins.trigger} 个也算）。<b>集满 ${config.pity.target} 必得 ${config.pity.award} 次免费旋转</b>，然后清零。连败不是白输，是可见的积累。</p>
+    </section>
+    <section>
+      <h4>赢奖分级</h4>
+      <p>碰 ≥5× · 杠 ≥10× · 胡了 ≥25× · 自摸 ≥50× · 天胡 ≥100×。单局封顶 <b>${config.maxWinX}×</b>（当前注 = ${fmt(config.maxWinX * bet)} 文）。</p>
+    </section>
+    <section class="rules-rtp">
+      <h4>公平性</h4>
+      <p>本游戏 <b>RTP（返奖率）约 95.6%</b>，由服务端权威判定，每一局的随机种子与结果全量留档、可审计回放。<b>不存在连败后暗中调整概率的机制</b>。</p>
+      <p class="dim">虚拟币娱乐，不涉及真实货币。</p>
+    </section>`;
+}
+
+function toggleRules(show: boolean) {
+  if (show) renderRules();
+  $('rules').classList.toggle('show', show);
 }
 
 function demoGrid() {
@@ -215,8 +316,47 @@ async function init() {
   };
   $('mute').textContent = sound.muted ? '静' : '音';
   $('mute').classList.toggle('off', sound.muted);
+
+  // 自动旋转：未开启时点开面板选次数；已开启时点击立即停止
+  $('auto').onclick = () => {
+    if (autoRemaining > 0) { stopAuto(); return; }
+    $('auto-panel').classList.toggle('show');
+  };
+  $('auto-counts').innerHTML = AUTO_COUNTS
+    .map((n) => `<button data-n="${n}">${n} 次</button>`).join('');
+  $('auto-counts').onclick = (e) => {
+    const n = Number((e.target as HTMLElement).dataset.n);
+    if (!n) return;
+    $('auto-panel').classList.remove('show');
+    autoRemaining = n;
+    renderHud();
+    void doSpin();
+  };
+  ($('auto-stop-feature') as HTMLInputElement).checked = autoStopOnFeature;
+  ($('auto-stop-feature') as HTMLInputElement).onchange = (e) => {
+    autoStopOnFeature = (e.target as HTMLInputElement).checked;
+  };
+  ($('auto-stop-bigwin') as HTMLInputElement).checked = autoStopOnBigWin;
+  ($('auto-stop-bigwin') as HTMLInputElement).onchange = (e) => {
+    autoStopOnBigWin = (e.target as HTMLInputElement).checked;
+  };
+
+  // 规则页
+  $('info').onclick = () => toggleRules(true);
+  $('rules-close').onclick = () => toggleRules(false);
+  $('rules').onclick = (e) => { if (e.target === $('rules')) toggleRules(false); };
+
+  // 经济按钮
+  $('claim-daily').onclick = () => void doClaim('daily');
+  $('claim-relief').onclick = () => void doClaim('relief');
+
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') { e.preventDefault(); void doSpin(); }
+    if (e.code === 'Escape') { toggleRules(false); $('auto-panel').classList.remove('show'); }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (autoRemaining > 0) stopAuto();
+      else void doSpin();
+    }
   });
 }
 
