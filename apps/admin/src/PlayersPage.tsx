@@ -3,6 +3,8 @@ import { api, type PlayerAdminRow } from './api';
 import { navigate } from './router';
 
 const PAGE_SIZE = 20;
+/** 测试用一键补币额度：按最大注 500 算够打 2000 局，不用反复回后台 */
+const QUICK_TOPUP = 1_000_000;
 const pct = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(2)}%`);
 
 export function PlayersPage() {
@@ -39,6 +41,15 @@ export function PlayersPage() {
     void act('补币', () => api(`/api/admin/players/${p.id}/credit`, { method: 'POST', body: { amount, note } }));
   };
 
+  /** 测试时余额打空了，一次点击就能接着玩——不必手输金额与备注 */
+  const quickCredit = (p: PlayerAdminRow) => {
+    if (!window.confirm(`给玩家 #${p.id} 补 100 万文（1,000,000）？测试用，走 admin_credit 流水，不计入赢奖。`)) return;
+    void act('补币', () => api(`/api/admin/players/${p.id}/credit`, {
+      method: 'POST',
+      body: { amount: QUICK_TOPUP, note: '测试补币' },
+    }));
+  };
+
   const reset = (p: PlayerAdminRow) => {
     if (!window.confirm(`重置玩家 #${p.id}？余额回 10,000，免费旋转与保底进度清零。`)) return;
     void act('重置', () => api(`/api/admin/players/${p.id}/reset`, { method: 'POST' }));
@@ -54,7 +65,7 @@ export function PlayersPage() {
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   return (
     <div>
-      <h2>玩家管理 <span className="hint">补币/重置全走流水，封禁进操作日志</span></h2>
+      <h2>玩家管理 <span className="hint">「补 100 万」是测试用一键补币；补币/重置全走流水，封禁进操作日志</span></h2>
       {error && <p className="error-line">⚠ {error}</p>}
 
       <div className="actions-row filters">
@@ -83,7 +94,8 @@ export function PlayersPage() {
                   <td>{pct(p.totalBet > 0 ? p.totalWin / p.totalBet : null)}</td>
                   <td>{p.lastSeenAt ? p.lastSeenAt.slice(5, 16).replace('T', ' ') : '—'}</td>
                   <td className="td-ops">
-                    <button disabled={busy} onClick={() => credit(p)}>补币</button>
+                    <button disabled={busy} className="primary" onClick={() => quickCredit(p)}>补 100 万</button>
+                    <button disabled={busy} onClick={() => credit(p)}>补币…</button>
                     <button disabled={busy} onClick={() => reset(p)}>重置</button>
                     <button disabled={busy} className={p.status === 'banned' ? '' : 'danger'} onClick={() => toggleBan(p)}>
                       {p.status === 'banned' ? '解封' : '封禁'}

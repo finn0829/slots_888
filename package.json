@@ -15,7 +15,8 @@
     "e2e:admin": "node scripts/e2e-admin-configs.mjs",
     "e2e:features": "node scripts/e2e-features.mjs",
     "e2e:stats": "node scripts/e2e-stats.mjs",
-    "e2e:ante": "node scripts/e2e-ante.mjs"
+    "e2e:ante": "node scripts/e2e-ante.mjs",
+    "e2e:topup": "node scripts/e2e-admin-topup.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
