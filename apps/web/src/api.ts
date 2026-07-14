@@ -17,6 +17,8 @@ export interface PlayerState {
 export interface PublicConfig {
   version: number;
   betLevels: number[];
+  /** 公示 RTP：服务端按当前生效配置下发（改配置就跟着变），前端不得写死 */
+  rtp: number;
   maxWinX: number;
   pity: { target: number; award: number };
   freeSpins: { trigger: number; base: number; perExtra: number };

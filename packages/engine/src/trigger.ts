@@ -9,7 +9,7 @@ import { NORMAL_SYMBOLS } from './grid';
 import type { GameConfig } from './types';
 
 /** 首盘面上单格出现骰子的概率 */
-function scatterCellProbability(config: GameConfig, anteEnabled: boolean): number {
+export function scatterCellProbability(config: GameConfig, anteEnabled: boolean): number {
   let total = 0;
   for (const s of NORMAL_SYMBOLS) total += config.symbols[s].weight;
   total += config.wildWeight;

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
+import { defaultPreset } from '@slots/engine';
 
 let app: FastifyInstance;
 let adminToken: string;
@@ -47,7 +48,8 @@ describe('统计聚合扩展（SRV-5 / ADM-3）', () => {
       expect(s.today.rtp).toBeCloseTo(s.today.totalWin / s.today.totalBet, 6);
     }
     expect(s.publishedVersion).toBe(1);
-    expect(s.theoreticalRtp).toBeCloseTo(0.9558, 4);
+    // 理论 RTP = 生效配置的标定值（ENG-10 重校；曾硬编码为旧直测值 0.9558）
+    expect(s.theoreticalRtp).toBeCloseTo(defaultPreset().nominalRtp, 4);
     expect(s.totalPlayers).toBe(1);
   });
 

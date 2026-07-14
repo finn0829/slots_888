@@ -93,7 +93,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   const adminTokens = new Set<string>();
 
   const getPlayerByToken = db.prepare('SELECT * FROM players WHERE token = ?');
-  const getPublished = db.prepare("SELECT version, config_json FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+  const getPublished = db.prepare("SELECT version, config_json, estimated_rtp FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1");
 
   /** 经济参数：settings 表覆盖默认值（缺 key 或缺字段都回退默认） */
   function getEconomy(): EconomyParams {
@@ -136,11 +136,14 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   });
 
   app.get('/api/config', async () => {
-    const row = getPublished.get() as { version: number; config_json: string };
+    const row = getPublished.get() as { version: number; config_json: string; estimated_rtp: number | null };
     const cfg = JSON.parse(row.config_json) as GameConfig;
     return {
       version: row.version,
       betLevels: BET_LEVELS,
+      // 公示 RTP：管理员改过权重的版本以模拟器估算值为准（此时预设的标定值已失效），
+      // 否则用该配置的标定值。前端一律照此渲染，不得写死——写死的数字改一次配置就成了谎言。
+      rtp: row.estimated_rtp ?? cfg.nominalRtp,
       paytable: Object.fromEntries(
         Object.entries(cfg.symbols).map(([s, v]) => [s, v.pay.map((x) => x * cfg.payoutScale)]),
       ),
@@ -675,10 +678,12 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
        FROM spins WHERE date(created_at) = date('now')`,
     ).get();
     const pub = db.prepare(
-      "SELECT version, estimated_rtp FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1",
-    ).get() as { version: number; estimated_rtp: number | null };
+      "SELECT version, estimated_rtp, config_json FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    ).get() as { version: number; estimated_rtp: number | null; config_json: string };
     const { totalPlayers } = db.prepare('SELECT COUNT(*) AS totalPlayers FROM players').get() as { totalPlayers: number };
-    return { today, publishedVersion: pub.version, theoreticalRtp: pub.estimated_rtp, totalPlayers };
+    // 与玩家侧公示同一条规则：跑过模拟器的版本用估算值，否则用配置的标定值（ENG-10）
+    const theoreticalRtp = pub.estimated_rtp ?? (JSON.parse(pub.config_json) as GameConfig).nominalRtp;
+    return { today, publishedVersion: pub.version, theoreticalRtp, totalPlayers };
   });
 
   app.get('/api/admin/stats/distributions', async (req, reply) => {

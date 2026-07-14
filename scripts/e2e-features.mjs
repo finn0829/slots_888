@@ -27,7 +27,10 @@ await p.click('#info');
 await p.waitForSelector('.rules.show', { timeout: 5000 });
 const rulesText = await p.textContent('#rules-body');
 ok('规则页打开且含赔付表', await p.isVisible('.rules-pt .pt-row'));
-ok('规则页公示 RTP', /RTP（返奖率）约 95\.6%/.test(rulesText));
+// 公示值必须与服务端下发的一致（写死在测试里就等于默许前端写死，ENG-10）
+const publicRtp = await p.evaluate(async () => (await (await fetch('/api/config')).json()).rtp);
+ok(`规则页公示 RTP = 服务端下发值（${(publicRtp * 100).toFixed(1)}%）`,
+  rulesText.includes(`RTP（返奖率）约 ${(publicRtp * 100).toFixed(1)}%`));
 ok('规则页说明保底与连锁倍数', /集满 100 必得 10 次/.test(rulesText) && /×1 → ×2 → ×3 → ×5 → ×10/.test(rulesText));
 await p.screenshot({ path: `${DIR}/mobile-rules.png` });
 await p.click('#rules-close');

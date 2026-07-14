@@ -90,4 +90,10 @@ export interface GameConfig {
   maxWinX: number;
   /** 全局赔付缩放（调 RTP 的总旋钮） */
   payoutScale: number;
+  /**
+   * 标定 RTP：该配置由 analyze() 实测得到的返奖率（ENG-10）。
+   * 玩家侧公示的就是这个数——不许在前端写死，否则改了权重它就成了谎言。
+   * 后台改过权重的草稿配置须重跑模拟器，用估算值覆盖（见 /api/config 的 rtp 字段）。
+   */
+  nominalRtp: number;
 }

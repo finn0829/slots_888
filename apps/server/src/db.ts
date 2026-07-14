@@ -101,7 +101,9 @@ export function openDb(dbPath: string): Db {
   if (!hasPublished) {
     db.prepare(
       "INSERT INTO game_configs (version, label, status, config_json, estimated_rtp, published_at) VALUES (1, ?, 'published', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
-    ).run('默认档 RTP 96.5（ENG-1 实测 95.6±0.9）', JSON.stringify(defaultPreset()), 0.9558);
+    // estimated_rtp 留空：默认预设自带 ENG-10 的标定值 nominalRtp，公示走它。
+    // （曾经在这里塞过一个旧直测值 0.9558，结果它盖住了标定值——陈旧的数字比没有数字更坏。）
+    ).run(`默认档 RTP ${(defaultPreset().nominalRtp * 100).toFixed(1)}（ENG-10 标定）`, JSON.stringify(defaultPreset()), null);
   }
   return db;
 }

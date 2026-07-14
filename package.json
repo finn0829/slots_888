@@ -17,7 +17,8 @@
     "e2e:stats": "node scripts/e2e-stats.mjs",
     "e2e:ante": "node scripts/e2e-ante.mjs",
     "e2e:topup": "node scripts/e2e-admin-topup.mjs",
-    "e2e:restore": "node scripts/e2e-restore.mjs"
+    "e2e:restore": "node scripts/e2e-restore.mjs",
+    "e2e:rtp": "node scripts/e2e-rtp.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

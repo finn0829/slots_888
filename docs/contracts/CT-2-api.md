@@ -35,11 +35,13 @@ interface PlayerState {
 |---|---|---|---|
 | `POST /api/session` | 创建游客账号（幂等：带旧 token 则返回原账号） | `{ token?: string }` | `{ token: string, state: PlayerState }` |
 | `GET /api/me` | 查询状态 | — | `{ state: PlayerState }` |
-| `GET /api/config` | 当前生效配置的**公开部分** | — | `{ version: number, betLevels: number[], paytable: …, anteRule: { costMultiplier: 1.25 }, maxWinX: 5000 }` |
+| `GET /api/config` | 当前生效配置的**公开部分** | — | `{ version, betLevels, paytable, rtp, anteRule: { costMultiplier, triggerRate, anteTriggerRate, speedup }, maxWinX, pity, freeSpins }` |
 | `POST /api/spin` | 旋转（唯一改变余额的玩家操作） | `{ bet: number, anteEnabled: boolean }` | `{ spin: SpinResult, state: PlayerState }` |
 | `POST /api/claim-daily` | 每日签到补币（**1,000 文**/日，UTC 日界） | — | `{ amount: number, state: PlayerState }`；已领过 → 409 |
 | `POST /api/claim-relief` | 破产补币：余额 < 最低注(10) 时可领 **2,000 文**，冷却 **4 小时** | — | `{ amount: number, state: PlayerState }`；不满足 → 409 |
 | `GET /api/last-spin` | 该玩家最后一局的完整 SpinResult（断线重连用） | — | `{ spin: SpinResult \| null }`；从未转过 → `{ spin: null }` |
+
+**公示 RTP（`rtp` 字段，ENG-10）**：`estimated_rtp ?? nominalRtp`——管理员改过权重并跑过模拟器的版本以估算值为准（此时预设的标定值已失效），否则用配置自带的标定值。**前端不得写死这个数**：后台改一次权重，写死的数字就成了对玩家的谎言（概率诚实原则红线）。同理 `anteRule` 的触发率也是按当前配置解析计算的。
 
 **`POST /api/spin` 服务端语义**（web 不实现任何判定）：
 1. `freeSpinsRemaining > 0` ⇒ 本次为 free spin：忽略请求的 bet/ante，用 `freeSpinBet`，不扣款，次数 −1。
