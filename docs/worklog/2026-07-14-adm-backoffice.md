@@ -90,3 +90,11 @@
 - 实现：EconomyPage（三参数表单+行内校验+dirty 才可保存+confirm+生效徽章，页脚说明保底/初始余额为何不在此调）；OpsPage（动作类型下拉过滤+分页+detail JSON 平铺展示）。
 - 验证：tsc 过；Playwright 9 项全过，含完整闭环：改签到额 1000→1100 → **新游客真实签到实得 1100** → 日志出现 economy_update（before/after 齐）→ 还原 1000。截图 economy.png / ops.png。
 - 踩坑：无（吸取环节 10 教训，等待选择器全部锚定页面特有元素，一次过）。
+
+## 环节 12 · 端到端验证与合并（收尾）
+
+- 全量验证：engine 35 + server 54 测试绿；两 app tsc 过；仓库四套 e2e（smoke/admin-configs/features/stats）全过——确认 SRV 改造没破坏配置发布/回滚、经济缓冲、玩家战绩口径。
+- 偶发失败排查：全量测试首跑 1 失败、重跑 6 次不复现。推断根因：admin-stats 对账用例转 20 把基础局却假设 spins 恰 20 行，**若触发免费旋转会多出 free 行**（~10% 概率）。修正为"分布之间互相对账 + ≥20"，不再依赖运气。
+- 顺手发现（未修，留给对应线程）：`npm run e2e`（smoke）把截图写到字面量 `undefined/` 目录，且 `undefined/web-1-idle.png` 已被误提交进库——e2e-smoke.mjs 的截图目录变量有 bug。
+- 合并：rebase 到 origin/main（ENG-6b 之后），13 提交无冲突，测试复跑全绿后 ff 合入 main 推送。
+- BACKLOG：SRV-5/6/9、ADM-3a/3b/4a/4b/5/6/7/8 全部标 ✅。ADM 工作流至此**全部完成**（含此前的 ADM-1/2a/2b/2c）。
