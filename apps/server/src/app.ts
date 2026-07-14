@@ -447,6 +447,95 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     };
   });
 
+  // ── 玩家管理（SRV-6a）──
+
+  const PLAYERS_PAGE_SIZE = 20;
+  const getPlayerById = db.prepare('SELECT * FROM players WHERE id = ?');
+
+  app.get('/api/admin/players', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { query?: string; page?: string };
+    const page = Math.max(1, Number(q.page) || 1);
+    // query：全数字 → id 精确；否则 token 前缀
+    let where = '';
+    const params: unknown[] = [];
+    if (q.query?.trim()) {
+      const s = q.query.trim();
+      if (/^\d+$/.test(s)) { where = 'WHERE p.id = ?'; params.push(Number(s)); }
+      else { where = "WHERE p.token LIKE ? || '%'"; params.push(s); }
+    }
+    const { total } = db.prepare(`SELECT COUNT(*) AS total FROM players p ${where}`).get(...params) as { total: number };
+    const players = db.prepare(
+      `SELECT p.id, p.balance, p.status, p.created_at AS createdAt, p.last_seen_at AS lastSeenAt,
+              COALESCE(s.spins, 0) AS spins, COALESCE(s.totalBet, 0) AS totalBet, COALESCE(s.totalWin, 0) AS totalWin
+       FROM players p
+       LEFT JOIN (SELECT player_id, COUNT(*) spins, SUM(total_cost) totalBet, SUM(total_win) totalWin
+                  FROM spins GROUP BY player_id) s ON s.player_id = p.id
+       ${where}
+       ORDER BY p.last_seen_at DESC NULLS LAST, p.id DESC
+       LIMIT ? OFFSET ?`,
+    ).all(...params, PLAYERS_PAGE_SIZE, (page - 1) * PLAYERS_PAGE_SIZE);
+    return { players, total };
+  });
+
+  /** 找玩家或 404；返回 null 表示已发送响应 */
+  function requireTarget(req: FastifyRequest, reply: FastifyReply): PlayerRow | null {
+    const id = Number((req.params as { id: string }).id);
+    const row = getPlayerById.get(id) as PlayerRow | undefined;
+    if (!row) { void reply.code(404).send(apiError('NOT_FOUND', '玩家不存在')); return null; }
+    return row;
+  }
+
+  app.post('/api/admin/players/:id/credit', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const target = requireTarget(req, reply);
+    if (!target) return;
+    const body = (req.body ?? {}) as { amount?: number; note?: string };
+    if (!Number.isInteger(body.amount) || (body.amount as number) <= 0) {
+      return reply.code(400).send(apiError('BAD_REQUEST', '补币金额须为正整数'));
+    }
+    const amount = body.amount as number;
+    db.transaction(() => {
+      const after = target.balance + amount;
+      db.prepare('UPDATE players SET balance = ? WHERE id = ?').run(after, target.id);
+      db.prepare('INSERT INTO transactions (player_id, type, amount, balance_after, note) VALUES (?, ?, ?, ?, ?)')
+        .run(target.id, 'admin_credit', amount, after, body.note ?? null);
+      logOp('player_credit', { playerId: target.id, amount, note: body.note ?? null });
+    })();
+    const updated = getPlayerById.get(target.id) as PlayerRow;
+    return { state: playerState(updated, getEconomy()) };
+  });
+
+  app.post('/api/admin/players/:id/reset', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const target = requireTarget(req, reply);
+    if (!target) return;
+    db.transaction(() => {
+      const delta = INITIAL_BALANCE - target.balance;
+      db.prepare(
+        `UPDATE players SET balance = ?, free_spins_remaining = 0, free_spin_bet = 0,
+         accumulated_multiplier = 0, dice_progress = 0 WHERE id = ?`,
+      ).run(INITIAL_BALANCE, target.id);
+      db.prepare('INSERT INTO transactions (player_id, type, amount, balance_after, note) VALUES (?, ?, ?, ?, ?)')
+        .run(target.id, 'admin_reset', delta, INITIAL_BALANCE, '重置为初始状态');
+      logOp('player_reset', { playerId: target.id, balanceBefore: target.balance });
+    })();
+    const updated = getPlayerById.get(target.id) as PlayerRow;
+    return { state: playerState(updated, getEconomy()) };
+  });
+
+  for (const [action, status] of [['ban', 'banned'], ['unban', 'active']] as const) {
+    app.post(`/api/admin/players/:id/${action}`, async (req, reply) => {
+      if (!requireAdmin(req, reply)) return;
+      const target = requireTarget(req, reply);
+      if (!target) return;
+      db.prepare('UPDATE players SET status = ? WHERE id = ?').run(status, target.id);
+      logOp(`player_${action}`, { playerId: target.id });
+      const updated = getPlayerById.get(target.id) as PlayerRow;
+      return { state: playerState(updated, getEconomy()) };
+    });
+  }
+
   app.get('/api/admin/economy', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     return { params: getEconomy() };

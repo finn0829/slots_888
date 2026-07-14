@@ -35,3 +35,11 @@
 - 结果：41/41 绿；旧 economy.test.ts 10 用例未破坏。
 - 决策：**不把 PITY/INITIAL_BALANCE 纳入可调**——保底参数是数学模型一部分（动了会破坏 RTP 口径），初始余额影响统计口径，都留在代码常量；ADM-7 范围收敛为纯经济缓冲三参数。
 - 踩坑：playerState 有 6 个调用点要跟着改签名，编译器兜底，无遗漏。
+
+## 环节 4 · SRV-6a 玩家管理 API（服务 ADM-5）
+
+- TDD：5 用例（401×5 端点 / 列表聚合列+query / credit 流水+日志+非法 400+404 / ban-spin-403-unban / reset 清态记差额）。
+- 实现：列表 LEFT JOIN spins 聚合子查询；credit/reset 走 db.transaction（更新+流水+日志原子）；ban/unban 循环注册两端点。
+- 结果：46/46 绿。
+- 决策：ban/unban 无资金变动 → 只进 admin_ops 不进 transactions（对账不变量 1 不受影响）；reset 的流水 amount 记差额（可为负），保证不变量 1 仍成立。
+- 踩坑：无。
