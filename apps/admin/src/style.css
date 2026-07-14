@@ -69,6 +69,9 @@ td.bad, .bad { color: var(--cinnabar-500); font-weight: 700; }
 .bar-count { color: #6B675D; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .big-stat { font-size: 26px; font-weight: 700; color: var(--felt-700); font-variant-numeric: tabular-nums; }
 
+button.danger { border-color: var(--cinnabar-500); color: var(--cinnabar-500); }
+button.danger:hover:not(:disabled) { background: #F9ECEC; }
+
 /* ── 审计回放（ADM-4）── */
 .filters input[type=date] { padding: 6px 8px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 13px; background: white; }
 .filters input { padding: 7px 10px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 14px; }

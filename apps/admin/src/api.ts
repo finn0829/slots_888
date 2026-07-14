@@ -61,6 +61,14 @@ export interface Distributions {
   fsTriggerRate: number;
 }
 
+// ── 玩家管理（ADM-5 / SRV-6a）──
+
+export interface PlayerAdminRow {
+  id: number; balance: number; status: 'active' | 'banned';
+  createdAt: string; lastSeenAt: string | null;
+  spins: number; totalBet: number; totalWin: number;
+}
+
 // ── 审计回放（ADM-4 / SRV-6b）──
 
 export interface SpinRow {
