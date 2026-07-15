@@ -603,8 +603,18 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     if (!row) return reply.code(404).send(apiError('NOT_FOUND', '记录不存在'));
 
     const stored = JSON.parse(row.result_json) as SpinResult;
+    const match = replayMatches(row, stored);
+
+    const { result_json: _omit, ...spinRow } = row;
+    return { spin: spinRow, result: stored, replayCheck: { match } };
+  });
+
+  /** 回放比对：spin 是纯函数，free 局起始倍数 = 首个 cascade 的 chainMultiplier（必为 ladder 值）。逐字节比对。 */
+  function replayMatches(
+    row: { configVersion: number; mode: 'base' | 'free'; bet: number; seed: string },
+    stored: SpinResult,
+  ): boolean {
     const cfgRow = getConfigRow.get(row.configVersion) as ConfigRow;
-    // 回放：spin 是纯函数，free 局起始倍数 = 首个 cascade 的 chainMultiplier（必为 ladder 值）
     const replayed = spin({
       seed: row.seed,
       bet: row.bet,
@@ -613,10 +623,68 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       accumulatedMultiplier: row.mode === 'free' ? (stored.cascades[0]?.chainMultiplier ?? 1) : undefined,
       config: JSON.parse(cfgRow.config_json) as GameConfig,
     });
-    const match = JSON.stringify(replayed) === JSON.stringify(stored);
+    return JSON.stringify(replayed) === JSON.stringify(stored);
+  }
 
-    const { result_json: _omit, ...spinRow } = row;
-    return { spin: spinRow, result: stored, replayCheck: { match } };
+  // ── 对账自检（SRV-13）──
+
+  const HEALTH_SAMPLE = 25; // 最近 25 + 随机 25
+  app.post('/api/admin/health-check', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+
+    // A 不变量 + B 流水链（逐玩家一次遍历同时算两项）
+    const players = db.prepare('SELECT id, balance FROM players').all() as { id: number; balance: number }[];
+    const txByPlayer = db.prepare('SELECT id, amount, balance_after FROM transactions WHERE player_id = ? ORDER BY id');
+    const invariant = { ok: true, checked: players.length, violations: [] as { playerId: number; balance: number; expected: number }[] };
+    const chain = { ok: true, checked: 0, violations: [] as { playerId: number; txId: number; expected: number; actual: number }[] };
+    for (const p of players) {
+      const txs = txByPlayer.all(p.id) as { id: number; amount: number; balance_after: number }[];
+      let running = INITIAL_BALANCE;
+      for (const t of txs) {
+        chain.checked++;
+        const expected = running + t.amount;
+        if (t.balance_after !== expected) {
+          chain.violations.push({ playerId: p.id, txId: t.id, expected, actual: t.balance_after });
+        }
+        running = t.balance_after; // 以实际值续算，一处断点不淹没后续
+      }
+      const expectedBalance = INITIAL_BALANCE + txs.reduce((s, t) => s + t.amount, 0);
+      if (p.balance !== expectedBalance) {
+        invariant.violations.push({ playerId: p.id, balance: p.balance, expected: expectedBalance });
+      }
+    }
+    invariant.ok = invariant.violations.length === 0;
+    chain.ok = chain.violations.length === 0;
+
+    // C 抽样回放：最近 N + 随机 N（总数 ≤2N 时等于全量）
+    type ReplayRow = { id: number; configVersion: number; mode: 'base' | 'free'; bet: number; seed: string; result_json: string };
+    const COLS = 'id, config_version AS configVersion, mode, bet, seed, result_json';
+    const recent = db.prepare(`SELECT ${COLS} FROM spins ORDER BY id DESC LIMIT ?`).all(HEALTH_SAMPLE) as ReplayRow[];
+    const cutoff = recent.length ? recent[recent.length - 1]!.id : 0;
+    const random = db.prepare(`SELECT ${COLS} FROM spins WHERE id < ? ORDER BY RANDOM() LIMIT ?`)
+      .all(cutoff, HEALTH_SAMPLE) as ReplayRow[];
+    const mismatches: number[] = [];
+    for (const r of [...recent, ...random]) {
+      if (!replayMatches(r, JSON.parse(r.result_json) as SpinResult)) mismatches.push(r.id);
+    }
+    const replayReport = { ok: mismatches.length === 0, sampled: recent.length + random.length, mismatches };
+
+    // D 各配置版本实测 RTP vs 估算（附样本量，供人肉判读——噪声随样本变化）
+    const rtp = db.prepare(
+      `SELECT s.config_version AS version, COUNT(*) AS spins,
+              CAST(SUM(s.total_win) AS REAL) / NULLIF(SUM(s.total_cost), 0) AS measured,
+              g.estimated_rtp AS estimated
+       FROM spins s JOIN game_configs g ON g.version = s.config_version
+       GROUP BY s.config_version ORDER BY s.config_version`,
+    ).all();
+
+    const report = { ranAt: new Date().toISOString(), invariant, chain, replay: replayReport, rtp };
+    logOp('health_check', {
+      invariantOk: invariant.ok, chainOk: chain.ok, replayOk: replayReport.ok,
+      players: invariant.checked, transactions: chain.checked, sampled: replayReport.sampled,
+      violations: invariant.violations.length + chain.violations.length + mismatches.length,
+    });
+    return { report };
   });
 
   // ── 玩家管理（SRV-6a）──

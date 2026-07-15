@@ -21,7 +21,12 @@
 
 ## 环节 2 · SRV-13/ADM-9 对账自检
 
-（待记录）
+- TDD：4 用例（401 · 干净数据四项全绿+ops 入账 · 篡改流水金额→不变量+链双抓且定位 txId · 篡改 result_json→抽样回放抓到）先跑 4 失败。
+- 实现：把详情端点的回放比对抽成 `replayMatches()` 共用；health-check 逐玩家一次遍历同时算不变量(A)与流水链(B)；抽样(C)=最近 25+随机 25（`WHERE id < cutoff ORDER BY RANDOM()`，总数 ≤50 时自然全量，测试因此确定性）；RTP 对照(D) 纯 SQL JOIN。
+- 决策：链校验断点后**以实际值续算**，一处篡改只报一笔而不是淹没后续全部；D 面板只列数字+样本量不下判断（判读交给 SRV-14 的自适应阈值）。
+- 前端：HealthPage 四面板红绿徽章；回放不一致的 spin 一键「去回放」（复用环节 1 的 spinId 直达）。
+- 验证：server 97/97 绿；Playwright 12/12——含完整篡改闭环：改真库两处 → 三面板全红+定位准确 → 还原 → 复跑恢复全绿；截图 health-allgreen/tampered/jump-mismatch.png 目检过。
+- 踩坑：篡改用例要动 dev 库，路径是 `apps/server/data/slots.db` 不是根 `data/`——第一次猜错目录。e2e 里篡改真库必须**带还原步骤**，并复跑自检证明还原成功。
 
 ## 环节 3 · SRV-14/ADM-10 看板告警
 

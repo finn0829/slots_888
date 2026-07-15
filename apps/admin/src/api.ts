@@ -82,6 +82,16 @@ export interface TxRow {
   createdAt: string;
 }
 
+// ── 对账自检（ADM-9 / SRV-13）──
+
+export interface HealthReport {
+  ranAt: string;
+  invariant: { ok: boolean; checked: number; violations: Array<{ playerId: number; balance: number; expected: number }> };
+  chain: { ok: boolean; checked: number; violations: Array<{ playerId: number; txId: number; expected: number; actual: number }> };
+  replay: { ok: boolean; sampled: number; mismatches: number[] };
+  rtp: Array<{ version: number; spins: number; measured: number | null; estimated: number | null }>;
+}
+
 // ── 审计回放（ADM-4 / SRV-6b）──
 
 export interface SpinRow {

@@ -7,7 +7,7 @@ const PAGE_SIZE = 50;
 const ACTION_NAMES: Record<string, string> = {
   login: '登录', config_publish: '发布配置', config_rollback: '回滚配置',
   player_credit: '补币', player_reset: '重置玩家', player_ban: '封禁', player_unban: '解封',
-  economy_update: '改经济参数',
+  economy_update: '改经济参数', health_check: '对账自检',
 };
 
 function DetailCell({ detail }: { detail: string | null }) {
