@@ -65,11 +65,25 @@ ok(`总投入含买入价（totalBet ${stats1.totalBet} ≥ ${expectCost}）`, s
 
 // ④ 把 10 次免费旋转打完，再对账 RTP = 总赢 / 总投入
 for (let i = 0; i < 20; i++) {
-  const inFree = num(await p.textContent('#freespins-count')) > 0;
-  if (!inFree) break;
+  const remaining = num(await p.textContent('#freespins-count'));
+  if (remaining <= 0) break;
   await p.click('#spin');
   await p.waitForSelector('#spin:not([disabled])', { timeout: 20000 });
-  await p.waitForTimeout(300);
+  // 关键：等免费次数真的递减（或归零）再进下一轮——否则按钮 re-enable 早于
+  // #freespins-count 的 DOM 更新，会读到陈旧值多点一次，那一下服务端已 0 次
+  // 免费旋转 ⇒ 变成一个基础局（多计 1 注投入），是本 e2e 的时序竞态而非产品 bug。
+  await p
+    .waitForFunction(
+      (prev) => {
+        const el = document.querySelector('#freespins-count');
+        const v = el ? Number(el.textContent) : 0;
+        return v < prev || v === 0;
+      },
+      remaining,
+      { timeout: 20000 },
+    )
+    .catch(() => {});
+  await p.waitForTimeout(200);
 }
 const stats2 = await p.evaluate(async (tk) => (await (await fetch('/api/stats', { headers: { authorization: `Bearer ${tk}` } })).json()), token);
 console.log(`   打完免费旋转：总投入 ${stats2.totalBet}（含买入 ${stats2.bonusBuySpent}）· 总赢 ${stats2.totalWin} · RTP ${stats2.rtp === null ? '—' : (stats2.rtp * 100).toFixed(1) + '%'}`);
