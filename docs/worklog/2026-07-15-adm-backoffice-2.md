@@ -39,4 +39,7 @@
 
 ## 环节 4 · 收尾
 
-（待记录）
+- 全量验证：engine 65 + server 101 单测绿；两 app tsc 过；仓库九套 e2e **单独跑全部 ALL PASS**。
+- 踩坑：九套 e2e 连跑会互相污染（共享 dev 服务与库：配置版本被 e2e:admin 切来切去、自动旋转状态串台），首轮连跑挂了 3 套，单独重跑全过。**复盘点：这批 e2e 脚本设计为独占共享服务，验证时逐套跑，别 for 循环连跑。**
+- e2e 副作用清理：e2e-smoke 又把 `undefined/` 下三张误提交截图刷脏、e2e-admin-configs 把主 checkout 的 p0-after 截图刷脏——两处 `git checkout --` 还原（`undefined/` 目录 bug 依旧留给对应线程修）。
+- 合并：rebase origin/main 后推送。BACKLOG 三条标 ✅。
