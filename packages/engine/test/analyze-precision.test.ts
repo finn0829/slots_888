@@ -33,7 +33,7 @@ describe('分析器精度（ENG-10 重校前提）', () => {
     // 完全线性应为 0.5；5000× 封顶会让高 scale 略微吃亏，故 ratio 略 ≥ 0.5
     expect(ratio).toBeGreaterThan(0.49);
     expect(ratio).toBeLessThan(0.53);
-  });
+  }, 120_000);
 
   it('误差随免费旋转样本量 ×4 而减半（触发率噪声消掉后，它是唯一的噪声源）', () => {
     const cfg = defaultPreset();
@@ -42,10 +42,14 @@ describe('分析器精度（ENG-10 重校前提）', () => {
     const shrink = small.rtpStderr / big.rtpStderr;
     expect(shrink).toBeGreaterThan(1.6);
     expect(shrink).toBeLessThan(2.5);
-  });
+  }, 120_000);
 
+  // 注：analyze() 给定 seedPrefix 是确定性的（sfc32，无 Math.random/Date 参与判定），
+  // 本测试的断言不会随机翻红。此前观察到的偶发失败其实是**测试超时**——这几个重蒙特卡洛
+  // 测试各跑 ~5s，贴着 vitest 默认 5000ms 超时线，负载下偶尔越线判失败。补足超时即根治，
+  // 与统计有效性无关（兄弟文件 analyze-unbiased/bonusbuy-rtp 早已用 120k~600k 的超时）。
   it('两次独立估计之差落在 3σ 内（估计器自洽，误差没被低估）', () => {
-    // 用 3σ 而非 2σ：2σ 意味着约 5% 的概率随机翻红，那种测试只会训练人忽略它。
+    // 用 3σ 而非 2σ：不同 seed 的两次估计本就有差异，3σ 给统计留足余量。
     const cfg = defaultPreset();
     const opts = { baseSpins: 150_000, featureRuns: 30_000 };
     const a = analyze(cfg, { ...opts, seedPrefix: 'c1' });
@@ -55,5 +59,5 @@ describe('分析器精度（ENG-10 重校前提）', () => {
       Math.abs(a.rtp - b.rtp),
       `c1=${(a.rtp * 100).toFixed(2)}% c2=${(b.rtp * 100).toFixed(2)}%，σ=${(sigma * 100).toFixed(2)}pp`,
     ).toBeLessThan(3 * sigma);
-  });
+  }, 120_000);
 });
