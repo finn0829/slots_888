@@ -24,11 +24,26 @@ const rulesText = async () => {
   return t;
 };
 
+const statsText = async () => {
+  await game.click('#stats-btn');
+  await game.waitForSelector('#stats.show', { timeout: 3000 });
+  await game.waitForFunction(() => !/统计中/.test(document.querySelector('#stats-body')?.textContent ?? '统计中'), null, { timeout: 5000 });
+  const t = await game.textContent('#stats-body');
+  await game.click('#stats-close');
+  await game.waitForTimeout(300);
+  return t;
+};
+
 const t1 = await rulesText();
 const shown = `${(cfg.rtp * 100).toFixed(1)}%`;
 ok(`规则页公示的 RTP = 服务端下发值（${shown}）`, t1.includes(`约 ${shown}`));
 ok('规则页仍声明"不存在连败后暗中调整概率"', t1.includes('不存在连败后暗中调整概率的机制'));
 ok('不再出现写死的旧值 95.6%', !t1.includes('约 95.6%') || shown === '95.6%');
+
+// 战绩面板的"理论值"同样必须走服务端下发值（此前写死 95.6%，是诚实红线漏网）
+const st1 = await statsText();
+ok(`战绩页理论值 = 服务端下发值（${shown}）`, st1.includes(shown));
+ok('战绩页不再写死 95.6%', !st1.includes('95.6%') || shown === '95.6%');
 await game.click('#info');
 await game.waitForSelector('#rules.show');
 await game.screenshot({ path: `${DIR}/mobile-rules-rtp.png` });
@@ -58,6 +73,9 @@ await game.waitForTimeout(1500);
 const t2 = await rulesText();
 const shown2 = `${(cfg2.rtp * 100).toFixed(1)}%`;
 ok(`规则页公示跟着变成 ${shown2}（证明不是写死的）`, t2.includes(`约 ${shown2}`) && !t2.includes(`约 ${shown}`));
+
+const st2 = await statsText();
+ok(`战绩页理论值跟着变成 ${shown2}（证明不是写死的）`, st2.includes(shown2) && !st2.includes(shown));
 
 ok('浏览器无 JS 异常', errors.length === 0);
 if (errors.length) console.log(errors.join('\n'));

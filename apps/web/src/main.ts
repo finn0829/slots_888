@@ -475,9 +475,12 @@ async function toggleStats(show: boolean) {
     const netCls = s.net > 0 ? 'up' : s.net < 0 ? 'down' : '';
     const sign = s.net > 0 ? '+' : '';
     const rtpTxt = s.rtp === null ? '—' : `${(s.rtp * 100).toFixed(1)}%`;
+    // 公示 RTP 一律用服务端下发值（ENG-10 原则）——写死数字在后台切档后就成了对玩家的谎言，
+    // 更会毁掉本面板"玩家可自行验证公示 RTP"的承诺（规则页已这么做，这里补齐）。
+    const rtpPct = (config.rtp * 100).toFixed(1);
     const rtpNote = s.totalSpins < 200
-      ? `样本仅 ${s.totalSpins} 局，波动很大——转够 1000 局以上才会向 95.6% 收敛。`
-      : `理论值 95.6%。你的实测偏差属正常波动，样本越大越接近。`;
+      ? `样本仅 ${s.totalSpins} 局，波动很大——转够 1000 局以上才会向 ${rtpPct}% 收敛。`
+      : `理论值 ${rtpPct}%。你的实测偏差属正常波动，样本越大越接近。`;
 
     $('stats-body').innerHTML = `
       <div class="stats-hero ${netCls}">
