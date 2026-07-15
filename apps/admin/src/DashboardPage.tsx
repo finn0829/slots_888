@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Distributions, type StatRow, type SummaryData } from './api';
+import { navigate } from './router';
 
 const pct = (v: number | null | undefined, digits = 2) => (v == null ? '—' : `${(v * 100).toFixed(digits)}%`);
 const TIER_NAMES: Record<string, string> = { peng: '碰', gang: '杠', hu: '胡了', zimo: '自摸', tianhu: '天胡' };
@@ -94,6 +95,34 @@ export function DashboardPage() {
       <h2>数据看板 <span className="hint">全部数字可与 spins 表逐条对账</span></h2>
       {error && <p className="error-line">⚠ {error}</p>}
 
+      {summary && summary.alerts.length > 0 && (
+        <div className="alerts" data-testid="alerts">
+          {summary.alerts.map((a, i) => (
+            <div className="alert-row" key={i}>
+              <span className="badge mismatch">告警</span>
+              {a.kind === 'rtp_deviation' && (
+                <span>
+                  v{a.version} 实测 RTP {pct(a.measured)} 偏离理论 {pct(a.estimated)} 超 3σ（±{(a.se * 3 * 100).toFixed(2)}pp · 样本 {a.spins.toLocaleString()} 局）
+                  ——运营信号，非统计证明，建议跑对账自检
+                </span>
+              )}
+              {a.kind === 'big_single_win' && (
+                <span>
+                  今日出现单局 {a.winX.toLocaleString()}× 大奖（玩家 #{a.playerId}）
+                  <button onClick={() => navigate('audit', { spinId: String(a.spinId) })}>回放 spin #{a.spinId}</button>
+                </span>
+              )}
+              {a.kind === 'player_rtp' && (
+                <span>
+                  玩家 #{a.playerId} 个人 RTP {pct(a.rtp)}（{a.spins.toLocaleString()} 局）持续超 150%
+                  <button onClick={() => navigate('audit', { playerId: String(a.playerId) })}>查其 spin</button>
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {summary && (
         <div className="cards">
           <div className="card">
@@ -101,7 +130,7 @@ export function DashboardPage() {
             <div className="sub">今日 Spin · 下注 {summary.today.totalBet.toLocaleString()} 文</div>
           </div>
           <div className="card">
-            <div className={`num ${summary.today.rtp != null && summary.today.rtp > 1 ? 'bad' : ''}`}>{pct(summary.today.rtp)}</div>
+            <div className={`num ${(summary.today.rtp != null && summary.today.rtp > 1) || summary.alerts.some((a) => a.kind === 'rtp_deviation') ? 'bad' : ''}`}>{pct(summary.today.rtp)}</div>
             <div className="sub">今日实测 RTP · 理论 {pct(summary.theoreticalRtp)}（v{summary.publishedVersion}）</div>
           </div>
           <div className="card">
@@ -109,7 +138,7 @@ export function DashboardPage() {
             <div className="sub">今日活跃玩家 · 累计 {summary.totalPlayers}</div>
           </div>
           <div className="card">
-            <div className="num">{summary.today.bigWins}</div>
+            <div className={`num ${summary.alerts.some((a) => a.kind === 'big_single_win') ? 'bad' : ''}`}>{summary.today.bigWins}</div>
             <div className="sub">今日大奖（≥50×）</div>
           </div>
         </div>

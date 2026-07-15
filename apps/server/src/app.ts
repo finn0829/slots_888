@@ -879,8 +879,71 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     const { totalPlayers } = db.prepare('SELECT COUNT(*) AS totalPlayers FROM players').get() as { totalPlayers: number };
     // 与玩家侧公示同一条规则：跑过模拟器的版本用估算值，否则用配置的标定值（ENG-10）
     const theoreticalRtp = pub.estimated_rtp ?? (JSON.parse(pub.config_json) as GameConfig).nominalRtp;
-    return { today, publishedVersion: pub.version, theoreticalRtp, totalPlayers };
+    return { today, publishedVersion: pub.version, theoreticalRtp, totalPlayers, alerts: computeAlerts() };
   });
+
+  // ── 看板告警（SRV-14）──
+  // 阈值随样本量自适应；免费旋转长尾使正态近似偏乐观 → 3σ + 最小样本双保险。
+  // 这是运营信号，不是统计证明（真伪由对账自检与审计回放判定）。
+
+  const ALERT_MIN_SPINS = 500;
+  const ALERT_SIGMA = 3;
+  const ALERT_BIG_WIN_X = 1000;
+  const ALERT_PLAYER_RTP = 1.5;
+
+  type Alert =
+    | { kind: 'rtp_deviation'; version: number; measured: number; estimated: number; se: number; spins: number }
+    | { kind: 'big_single_win'; spinId: number; playerId: number; winX: number }
+    | { kind: 'player_rtp'; playerId: number; rtp: number; spins: number };
+
+  function computeAlerts(): Alert[] {
+    const alerts: Alert[] = [];
+
+    // ① 各版本 RTP 偏差：比值估计量 r̂=ΣW/ΣC 的 delta-method 标准误
+    //    SE² = (Σw² − 2r̂Σwc + r̂²Σc²) / (ΣC)²   （把每局视为独立，长尾场景下偏乐观）
+    const perVersion = db.prepare(
+      `SELECT s.config_version AS version, COUNT(*) AS spins,
+              CAST(SUM(s.total_win) AS REAL)  AS w,  CAST(SUM(s.total_cost) AS REAL) AS c,
+              CAST(SUM(s.total_win * s.total_win) AS REAL)   AS ww,
+              CAST(SUM(s.total_cost * s.total_cost) AS REAL) AS cc,
+              CAST(SUM(s.total_win * s.total_cost) AS REAL)  AS wc,
+              g.estimated_rtp AS estimatedRtp, g.config_json
+       FROM spins s JOIN game_configs g ON g.version = s.config_version
+       GROUP BY s.config_version HAVING COUNT(*) >= ? AND SUM(s.total_cost) > 0`,
+    ).all(ALERT_MIN_SPINS) as Array<{
+      version: number; spins: number; w: number; c: number; ww: number; cc: number; wc: number;
+      estimatedRtp: number | null; config_json: string;
+    }>;
+    for (const v of perVersion) {
+      const estimated = v.estimatedRtp ?? (JSON.parse(v.config_json) as GameConfig).nominalRtp;
+      if (estimated == null) continue;
+      const measured = v.w / v.c;
+      const se = Math.sqrt(Math.max(0, v.ww - 2 * measured * v.wc + measured * measured * v.cc)) / v.c;
+      if (Math.abs(measured - estimated) > ALERT_SIGMA * se) {
+        alerts.push({ kind: 'rtp_deviation', version: v.version, measured, estimated, se, spins: v.spins });
+      }
+    }
+
+    // ② 今日单局 ≥1000×（封顶 5000×，这一档值得人工看一眼）
+    const bigWins = db.prepare(
+      `SELECT id AS spinId, player_id AS playerId, CAST(total_win AS REAL) / bet AS winX
+       FROM spins WHERE date(created_at) = date('now') AND total_win >= bet * ?
+       ORDER BY winX DESC LIMIT 10`,
+    ).all(ALERT_BIG_WIN_X) as Array<{ spinId: number; playerId: number; winX: number }>;
+    alerts.push(...bigWins.map((b) => ({ kind: 'big_single_win' as const, ...b })));
+
+    // ③ 单玩家整体 RTP 异常（大样本下仍远超 100% → 值得审计其 spin）
+    const hotPlayers = db.prepare(
+      `SELECT player_id AS playerId, COUNT(*) AS spins,
+              CAST(SUM(total_win) AS REAL) / SUM(total_cost) AS rtp
+       FROM spins GROUP BY player_id
+       HAVING COUNT(*) >= ? AND SUM(total_cost) > 0 AND SUM(total_win) >= ? * SUM(total_cost)
+       ORDER BY rtp DESC LIMIT 10`,
+    ).all(ALERT_MIN_SPINS, ALERT_PLAYER_RTP) as Array<{ playerId: number; spins: number; rtp: number }>;
+    alerts.push(...hotPlayers.map((p) => ({ kind: 'player_rtp' as const, ...p })));
+
+    return alerts;
+  }
 
   app.get('/api/admin/stats/distributions', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;

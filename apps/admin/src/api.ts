@@ -47,11 +47,17 @@ export interface StatRow {
   rtp: number | null; hitRate: number; fsTriggers: number; uniquePlayers: number;
 }
 
+export type Alert =
+  | { kind: 'rtp_deviation'; version: number; measured: number; estimated: number; se: number; spins: number }
+  | { kind: 'big_single_win'; spinId: number; playerId: number; winX: number }
+  | { kind: 'player_rtp'; playerId: number; rtp: number; spins: number };
+
 export interface SummaryData {
   today: { spins: number; totalBet: number; totalWin: number; rtp: number | null; uniquePlayers: number; bigWins: number };
   publishedVersion: number;
   theoreticalRtp: number | null;
   totalPlayers: number;
+  alerts: Alert[];
 }
 
 export interface Distributions {
