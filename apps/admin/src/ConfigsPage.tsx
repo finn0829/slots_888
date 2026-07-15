@@ -91,6 +91,11 @@ export function ConfigsPage() {
     if (!editing) return;
     setEditing({ ...editing, config: { ...editing.config, [field]: value } });
   };
+  const setBonusBuyEnabled = (enabled: boolean) => {
+    if (!editing) return;
+    const prev = editing.config.bonusBuy ?? { enabled: true, costMultiplier: 0 };
+    setEditing({ ...editing, config: { ...editing.config, bonusBuy: { ...prev, enabled } } });
+  };
 
   return (
     <div>
@@ -162,6 +167,15 @@ export function ConfigsPage() {
                     onChange={(e) => setField(field, Number(e.target.value))} />
                 </label>
               ))}
+              <label className="field-row" title="关闭后前端隐藏买入按钮、服务端拒绝买入">
+                <span>Bonus Buy 买入免费旋转</span>
+                <span>
+                  <input type="checkbox"
+                    checked={editing.config.bonusBuy?.enabled ?? true}
+                    onChange={(e) => setBonusBuyEnabled(e.target.checked)} />
+                  {' '}买入价 {(editing.config.bonusBuy?.costMultiplier ?? 0).toFixed(1)}×（改权重后须重标）
+                </span>
+              </label>
               {sim && (
                 <div className="sim-result">
                   <h4>估算结果（{(sim.spins / 10000).toFixed(0)} 万次 · {sim.elapsedMs}ms）</h4>

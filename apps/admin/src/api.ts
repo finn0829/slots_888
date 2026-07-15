@@ -106,5 +106,7 @@ export interface EditableConfig {
   scatterWeight: number;
   goldWeight: number;
   payoutScale: number;
+  /** Bonus Buy（ENG-8）：enabled 后台可切；costMultiplier 由标定脚本产出，只读透传 */
+  bonusBuy?: { enabled: boolean; costMultiplier: number };
   [key: string]: unknown;
 }

@@ -312,6 +312,28 @@ button:focus-visible, .banner:focus-visible { outline: 2px solid var(--gold-300)
     0 8px 22px rgba(0,0,0,.45);
 }
 #spin:active:not(:disabled) { transform: translateY(3px); box-shadow: inset 0 0 0 2px rgba(227,201,138,0.28), 0 1px 0 var(--cinnabar-700); }
+
+/* ── Bonus Buy 买入按钮（ENG-8）── */
+.bonus-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 80px;
+  padding: 8px 10px;
+  font-family: var(--kai);
+  line-height: 1.15;
+  color: var(--wood-900);
+  background: linear-gradient(180deg, var(--gold-300), var(--gold-500));
+  border: 1px solid var(--gold-300);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.22), 0 4px 0 var(--gold-500), 0 8px 22px rgba(0,0,0,.4);
+}
+.bonus-buy b { font-size: clamp(13px, 3.4vw, 15px); font-weight: 700; letter-spacing: 1px; }
+.bonus-buy .bonus-buy-cost { font-size: clamp(11px, 3vw, 13px); font-weight: 700; opacity: .82; }
+.bonus-buy:active:not(:disabled) { transform: translateY(3px); box-shadow: inset 0 0 0 2px rgba(255,255,255,0.22), 0 1px 0 var(--gold-500); }
+.bonus-buy:disabled { opacity: .45; }
 #turbo, #mute {
   font-family: var(--kai);
   font-size: 20px;

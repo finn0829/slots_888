@@ -31,6 +31,11 @@ export interface PublicConfig {
     anteTriggerRate: number;
     speedup: number;
   };
+  /** Bonus Buy：开关 + 买入价倍数（服务端下发，前端不得写死） */
+  bonusBuy: {
+    enabled: boolean;
+    costMultiplier: number;
+  };
 }
 
 let token = localStorage.getItem(TOKEN_KEY) ?? undefined;
@@ -69,6 +74,11 @@ export async function requestSpin(bet: number, anteEnabled = false): Promise<{ s
   return post('/api/spin', { bet, anteEnabled }, true);
 }
 
+/** Bonus Buy：花钱直接买 N 次免费旋转（服务端权威扣款并置免费旋转状态） */
+export async function requestBonusBuy(bet: number): Promise<{ cost: number; freeSpinsAwarded: number; state: PlayerState }> {
+  return post('/api/bonus-buy', { bet }, true);
+}
+
 export async function claimDaily(): Promise<{ amount: number; state: PlayerState }> {
   return post('/api/claim-daily', undefined, true);
 }
@@ -96,6 +106,7 @@ export interface PlayerStats {
   biggestWin: number;
   biggestWinX: number;
   freeSpinsPlayed: number;
+  bonusBuySpent: number;
   bonusReceived: number;
 }
 

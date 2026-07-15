@@ -4,7 +4,7 @@ import type { Grid, SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
 import { Sound } from './sound';
-import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchHistory, fetchLastSpin, fetchStats, requestSpin, type HistoryRow, type PlayerState, type PublicConfig } from './api';
+import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchHistory, fetchLastSpin, fetchStats, requestBonusBuy, requestSpin, type HistoryRow, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -58,6 +58,23 @@ function spinCost(): number {
   return anteEnabled ? Math.round(bet * config.anteRule.costMultiplier) : bet;
 }
 
+/** Bonus Buy 买入价（服务端下发的倍数 × 当前注，绝不写死） */
+function bonusBuyCost(): number {
+  return Math.round(config.betLevels[betIndex]! * config.bonusBuy.costMultiplier);
+}
+
+/** 买入按钮：仅在开放且非免费旋转/非旋转/非自动时出现；余额不足则禁用 */
+function renderBonusBuy() {
+  const el = $('bonus-buy') as HTMLButtonElement;
+  const inFree = state.freeSpinsRemaining > 0;
+  const show = config.bonusBuy.enabled && !inFree && !spinning && autoRemaining === 0;
+  el.style.display = show ? 'flex' : 'none';
+  if (!show) return;
+  const cost = bonusBuyCost();
+  $('bonus-buy-cost').textContent = `${fmt(cost)} 文`;
+  el.disabled = state.balance < cost;
+}
+
 function renderAnte() {
   const { costMultiplier, triggerRate, anteTriggerRate, speedup } = config.anteRule;
   const bet = config.betLevels[betIndex]!;
@@ -96,6 +113,7 @@ function renderHud() {
   // 免费旋转期间 ante 不生效（服务端强制忽略），UI 同步禁用
   ($('ante') as HTMLButtonElement).disabled = spinning || inFree || auto;
   renderAnte();
+  renderBonusBuy();
 
   // 自动旋转：转起来后按钮变「停止 (剩余次数)」
   const autoBtn = $('auto') as HTMLButtonElement;
@@ -223,6 +241,31 @@ async function doSpin() {
   if (next) setTimeout(() => void doSpin(), (next === 'free' ? 550 : 350) / board.speed);
 }
 
+/** Bonus Buy：二次确认 → 买入 → 复用「还剩 N 次 · 点继续」横幅（WEB-18 流程） */
+async function doBonusBuy() {
+  if (spinning || autoRemaining > 0 || state.freeSpinsRemaining > 0) return;
+  if (!config.bonusBuy.enabled) return;
+  const cost = bonusBuyCost();
+  if (state.balance < cost) {
+    await showBanner('余额不足', `买入需 ${fmt(cost)} 文`, 'info');
+    return;
+  }
+  const award = config.pity.award;
+  if (!window.confirm(`花 ${fmt(cost)} 文直接买入 ${award} 次免费旋转？（买入不含加注）`)) return;
+  try {
+    const res = await requestBonusBuy(config.betLevels[betIndex]!);
+    state = res.state;
+    sound.gong();
+    fx.rain(2);
+    await showBanner('买入成功', `免费旋转 ${res.freeSpinsAwarded} 次 · 点「继续」开始`, 'fs');
+  } catch (err) {
+    const e = err as Error & { status?: number };
+    await showBanner('买入失败', e.message, 'info');
+  } finally {
+    renderHud();
+  }
+}
+
 /** 领取签到/救济 */
 async function doClaim(kind: 'daily' | 'relief') {
   if (spinning) return;
@@ -304,6 +347,11 @@ function renderRules() {
       <p>免费旋转触发 <b>1/${Math.round(1 / config.anteRule.triggerRate)}</b> → <b>1/${Math.round(1 / config.anteRule.anteTriggerRate)}</b>，快 <b>${config.anteRule.speedup.toFixed(2)} 倍</b>。</p>
       <p class="dim">这是唯一影响概率的开关，且完全由你掌控。以上数字由服务端按当前生效配置实时计算，不是宣传话术。</p>
     </section>
+    ${config.bonusBuy.enabled ? `<section>
+      <h4>买入免费旋转（Bonus Buy）</h4>
+      <p>不想等触发，可花 <b>${fmt(bonusBuyCost())} 文</b>（当前注 ${bet} 的 <b>${config.bonusBuy.costMultiplier.toFixed(1)}×</b>）直接进入 <b>${config.pity.award} 次免费旋转</b>。买入不含加注。</p>
+      <p class="dim">买入价按「买入档 RTP ≈ 全局 RTP ${(config.rtp * 100).toFixed(1)}%」标定——花钱买回来的期望返奖率和正常玩这一档一样，不是更差的兑换。数字由服务端下发，改配置就跟着变。</p>
+    </section>` : ''}
     <section class="rules-rtp">
       <h4>公平性</h4>
       <p>本游戏 <b>RTP（返奖率）约 ${(config.rtp * 100).toFixed(1)}%</b>，由服务端权威判定，每一局的随机种子与结果全量留档、可审计回放。<b>不存在连败后暗中调整概率的机制</b>。</p>
@@ -518,6 +566,7 @@ async function init() {
     renderHud();
   };
   $('spin').onclick = () => void doSpin();
+  $('bonus-buy').onclick = () => void doBonusBuy();
   $('turbo').onclick = () => {
     board.speed = board.speed === 1 ? 2.5 : 1;
     $('turbo').classList.toggle('on', board.speed !== 1);

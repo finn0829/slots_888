@@ -19,7 +19,8 @@
     "e2e:topup": "node scripts/e2e-admin-topup.mjs",
     "e2e:restore": "node scripts/e2e-restore.mjs",
     "e2e:history": "node scripts/e2e-history.mjs",
-    "e2e:rtp": "node scripts/e2e-rtp.mjs"
+    "e2e:rtp": "node scripts/e2e-rtp.mjs",
+    "e2e:bonusbuy": "node scripts/e2e-bonusbuy.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
