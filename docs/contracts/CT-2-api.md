@@ -1,7 +1,7 @@
-# CT-2 · HTTP API 契约（v0.2）
+# CT-2 · HTTP API 契约（v0.3）
 
 > 生产者：`apps/server`（Fastify）。消费者：`apps/web`、`apps/admin`。
-> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck。
+> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck；2026-07-15 v0.3 玩家侧新增 `GET /api/history`（WEB-14 赢奖历史，游标分页 + 终盘盘面）。
 
 ## 通用约定
 
@@ -40,6 +40,30 @@ interface PlayerState {
 | `POST /api/claim-daily` | 每日签到补币（**1,000 文**/日，UTC 日界） | — | `{ amount: number, state: PlayerState }`；已领过 → 409 |
 | `POST /api/claim-relief` | 破产补币：余额 < 最低注(10) 时可领 **2,000 文**，冷却 **4 小时** | — | `{ amount: number, state: PlayerState }`；不满足 → 409 |
 | `GET /api/last-spin` | 该玩家最后一局的完整 SpinResult（断线重连用） | — | `{ spin: SpinResult \| null }`；从未转过 → `{ spin: null }` |
+| `GET /api/history` | 该玩家最近若干局（游标分页，可展开看终盘盘面，WEB-14） | `?before=<spinId>&limit=20` | `{ history: HistoryRow[], nextCursor: number \| null }` |
+
+**`GET /api/history` 语义（WEB-14）**：需玩家鉴权（未登录 401）。按 `spins.id` 降序返回该玩家自己的最近记录（**不串号**）。
+
+- `limit`：默认 **20**，上限 **50**（超出即截断为 50；非法值回退默认）。
+- `before`：游标 = 上一页最后一条的 `spinId`，返回 `id < before` 的更早记录；缺省则从最新开始。
+- `nextCursor`：本页最后一条的 `spinId`；当本页返回数 **< limit**（无更早记录）时为 `null`。前端据此决定是否显示「加载更多」。
+- **免费局口径**（与个人统计 `/api/stats` 一致）：`isFree = (mode === 'free')`，其 `totalCost = 0`（**不计入投入**）；`bet` 为触发时锁定的注，`winX = totalWin / bet` 仍有意义。
+- `finalGrid`：该局落库 `result_json` **最后一个 cascade 的 `gridAfter`**（6×5 终盘），供前端直接 `board.setGrid` 渲染，无需再拉完整 SpinResult。engine 是唯一真相源，前端只渲染不重算。
+
+```ts
+interface HistoryRow {
+  spinId: number;
+  createdAt: string;                 // UTC ISO-8601
+  mode: 'base' | 'free';
+  isFree: boolean;                   // mode === 'free'
+  bet: number;                       // 该局的注（免费局为锁定注）
+  totalCost: number;                 // 实际投入（免费局 = 0，不计入投入）
+  totalWin: number;                  // 文，已含所有倍数
+  winX: number;                      // totalWin / bet（该局赢奖倍数）
+  winTier: WinTier | null;
+  finalGrid: Grid;                   // 终盘（result_json 末个 cascade 的 gridAfter）
+}
+```
 
 **公示 RTP（`rtp` 字段，ENG-10）**：`estimated_rtp ?? nominalRtp`——管理员改过权重并跑过模拟器的版本以估算值为准（此时预设的标定值已失效），否则用配置自带的标定值。**前端不得写死这个数**：后台改一次权重，写死的数字就成了对玩家的谎言（概率诚实原则红线）。同理 `anteRule` 的触发率也是按当前配置解析计算的。
 

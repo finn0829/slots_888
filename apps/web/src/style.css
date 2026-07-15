@@ -461,6 +461,95 @@ button:focus-visible, .banner:focus-visible { outline: 2px solid var(--gold-300)
 }
 .stats-rtp .dim { font-size: 11.5px; line-height: 1.7; color: rgba(245,239,224,0.5); margin-bottom: 3px; }
 
+/* ── 赢奖历史（WEB-14） ── */
+.history { margin-top: 18px; }
+.history > h4 {
+  font-family: var(--kai); font-size: 15px; color: var(--gold-300);
+  letter-spacing: 2px; margin-bottom: 10px;
+}
+.history > h4 small { font-size: 11px; color: rgba(245,239,224,0.45); letter-spacing: 0; margin-left: 6px; }
+#history-list { display: flex; flex-direction: column; gap: 4px; }
+#history-list .dim { font-size: 12px; color: rgba(245,239,224,0.5); padding: 6px 0; }
+.hist-row {
+  background: rgba(20,14,7,0.7);
+  border: 1px solid rgba(201,164,92,0.14);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.hist-row.free { border-color: rgba(201,164,92,0.32); }
+.hist-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.hist-time { font-size: 12px; color: rgba(245,239,224,0.55); }
+.hist-bet { font-size: 13px; color: var(--ivory-300); }
+.hist-bet .free-tag {
+  font-family: var(--kai); font-style: normal; font-size: 11px;
+  color: var(--gold-300); padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--gold-700); background: rgba(201,164,92,0.12);
+}
+.hist-win { font-size: 14px; text-align: right; }
+.hist-win.gold { color: var(--gold-300); }
+.hist-win.dim { color: rgba(245,239,224,0.4); }
+.hist-x { font-size: 12px; color: rgba(245,239,224,0.6); text-align: right; }
+.hist-caret { color: var(--gold-500); font-size: 11px; transition: transform 0.2s; text-align: center; }
+.hist-head[aria-expanded="true"] .hist-caret { transform: rotate(180deg); }
+.hist-board { display: none; padding: 0 12px 12px; }
+.hist-board.show { display: block; }
+.mini-board {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  max-width: 240px;
+  margin: 4px auto 0;
+}
+.mini-cell {
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--kai);
+  font-size: 15px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f5efe0, #e6dcc4);
+  color: #2a1d10;
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12);
+}
+.mini-cell.red { color: var(--cinnabar-500); }
+.mini-cell.green { color: #2f7d55; }
+.mini-cell.blue { color: #2a5b86; }
+.mini-cell.gold {
+  color: #6b4e13;
+  background: linear-gradient(180deg, var(--gold-300), var(--gold-500));
+}
+.mini-cell.scatter {
+  background: linear-gradient(180deg, #2a2016, #17110a);
+  color: var(--gold-300);
+  font-size: 14px;
+}
+.history-more {
+  display: none;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 0;
+  font-family: var(--kai);
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--gold-300);
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--gold-700);
+  border-radius: 8px;
+}
+
 /* ── 经济按钮（签到 / 救济） ── */
 .claim { display: none; gap: 6px; }
 .claim button {

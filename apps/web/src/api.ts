@@ -1,4 +1,4 @@
-import type { SpinResult } from '@slots/engine';
+import type { Grid, SpinResult, WinTier } from '@slots/engine';
 
 const TOKEN_KEY = 'slots888_token';
 
@@ -105,4 +105,30 @@ export async function fetchStats(): Promise<PlayerStats> {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<PlayerStats>;
+}
+
+/** 一条赢奖历史（WEB-14）：含终盘盘面，展开时直接上盘 */
+export interface HistoryRow {
+  spinId: number;
+  createdAt: string;
+  mode: 'base' | 'free';
+  isFree: boolean;
+  bet: number;
+  totalCost: number;
+  totalWin: number;
+  winX: number;
+  winTier: WinTier | null;
+  finalGrid: Grid;
+}
+
+/** 赢奖历史：游标分页，before = 上一页最后一条 spinId（加载更早） */
+export async function fetchHistory(before?: number, limit = 20): Promise<{ history: HistoryRow[]; nextCursor: number | null }> {
+  const qs = new URLSearchParams();
+  if (before) qs.set('before', String(before));
+  qs.set('limit', String(limit));
+  const res = await fetch(`/api/history?${qs.toString()}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ history: HistoryRow[]; nextCursor: number | null }>;
 }

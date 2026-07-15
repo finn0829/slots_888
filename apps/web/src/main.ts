@@ -1,10 +1,10 @@
 import 'lxgw-wenkai-webfont/lxgwwenkai-bold.css';
 import './style.css';
-import type { SpinResult, WinTier } from '@slots/engine';
+import type { Grid, SpinResult, WinTier } from '@slots/engine';
 import { Board } from './board';
 import { Fx, shake } from './fx';
 import { Sound } from './sound';
-import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchLastSpin, fetchStats, requestSpin, type PlayerState, type PublicConfig } from './api';
+import { claimDaily, claimRelief, ensureSession, fetchConfig, fetchHistory, fetchLastSpin, fetchStats, requestSpin, type HistoryRow, type PlayerState, type PublicConfig } from './api';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -316,12 +316,112 @@ function toggleRules(show: boolean) {
   $('rules').classList.toggle('show', show);
 }
 
+/** 符号 → 牌面字（含特殊牌），供历史终盘小盘面渲染 */
+const SYMBOL_CHAR: Record<string, { char: string; cls: string }> = {
+  zhong: { char: '中', cls: 'red' }, fa: { char: '發', cls: 'green' },
+  east: { char: '東', cls: 'blue' }, south: { char: '南', cls: 'blue' },
+  west: { char: '西', cls: 'blue' }, north: { char: '北', cls: 'blue' },
+  wan: { char: '萬', cls: 'red' }, tong: { char: '筒', cls: 'blue' }, tiao: { char: '條', cls: 'green' },
+  wild: { char: '百', cls: 'gold' }, scatter: { char: '🎲', cls: 'scatter' }, gold: { char: '金', cls: 'gold' },
+};
+
+/** 只读小盘面：grid[col][row]，按 5 行 × 6 列铺开；cell 带 data-sym 供 e2e 逻辑比对 */
+function miniBoardHtml(grid: Grid): string {
+  let cells = '';
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 6; col++) {
+      const sym = grid[col]?.[row]?.symbol ?? '';
+      const info = SYMBOL_CHAR[sym] ?? { char: '', cls: '' };
+      cells += `<span class="mini-cell ${info.cls}" data-sym="${sym}">${info.char}</span>`;
+    }
+  }
+  return `<div class="mini-board">${cells}</div>`;
+}
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function historyRowHtml(r: HistoryRow): string {
+  const win = r.totalWin > 0;
+  const betTxt = r.isFree ? '<em class="free-tag">免费</em>' : fmt(r.bet);
+  const xTxt = r.bet > 0 && r.winX >= 0.05 ? `${r.winX.toFixed(1)}×` : '—';
+  return `
+    <div class="hist-row${r.isFree ? ' free' : ''}" data-spin-id="${r.spinId}">
+      <button class="hist-head" data-toggle="${r.spinId}" aria-expanded="false">
+        <span class="hist-time">${fmtTime(r.createdAt)}</span>
+        <span class="hist-bet">${betTxt}</span>
+        <span class="hist-win ${win ? 'gold' : 'dim'}">${win ? '+' + fmt(r.totalWin) : '—'}</span>
+        <span class="hist-x">${xTxt}</span>
+        <span class="hist-caret">▾</span>
+      </button>
+      <div class="hist-board" id="hist-board-${r.spinId}"></div>
+    </div>`;
+}
+
+let historyCursor: number | null = null;
+let historyLoading = false;
+const historyGrids = new Map<number, Grid>();
+
+/** 加载一页历史（reset=从头）；数据全部来自 /api/history，不写死 */
+async function loadHistory(reset: boolean) {
+  if (historyLoading) return;
+  historyLoading = true;
+  const listEl = $('history-list');
+  const moreBtn = $('history-more') as HTMLButtonElement;
+  if (reset) {
+    historyCursor = null;
+    historyGrids.clear();
+    listEl.innerHTML = '<p class="dim">读取中…</p>';
+  } else {
+    moreBtn.textContent = '读取中…';
+    moreBtn.disabled = true;
+  }
+  try {
+    const { history, nextCursor } = await fetchHistory(historyCursor ?? undefined, 20);
+    if (reset) listEl.innerHTML = '';
+    if (reset && history.length === 0) {
+      listEl.innerHTML = '<p class="dim">还没有记录，先转几局吧。</p>';
+    }
+    for (const r of history) {
+      historyGrids.set(r.spinId, r.finalGrid);
+      listEl.insertAdjacentHTML('beforeend', historyRowHtml(r));
+    }
+    historyCursor = nextCursor;
+    moreBtn.style.display = nextCursor !== null ? 'block' : 'none';
+    moreBtn.textContent = '加载更多';
+    moreBtn.disabled = false;
+  } catch (err) {
+    if (reset) listEl.innerHTML = `<p class="dim">读取失败：${(err as Error).message}</p>`;
+    moreBtn.textContent = '加载更多';
+    moreBtn.disabled = false;
+  } finally {
+    historyLoading = false;
+  }
+}
+
+/** 展开/收起某条历史的终盘小盘面 */
+function toggleHistoryRow(spinId: number) {
+  const boardEl = $(`hist-board-${spinId}`);
+  const head = document.querySelector(`.hist-head[data-toggle="${spinId}"]`) as HTMLElement | null;
+  if (!boardEl) return;
+  const open = boardEl.classList.toggle('show');
+  head?.setAttribute('aria-expanded', String(open));
+  if (open && boardEl.childElementCount === 0) {
+    const grid = historyGrids.get(spinId);
+    if (grid) boardEl.innerHTML = miniBoardHtml(grid);
+  }
+}
+
 /** 个人战绩（WEB-13）：诚实展示投入与回报，玩家可自行验证公示的 RTP */
 async function toggleStats(show: boolean) {
   const el = $('stats');
   if (!show) { el.classList.remove('show'); return; }
   $('stats-body').innerHTML = '<p class="dim">统计中…</p>';
   el.classList.add('show');
+  void loadHistory(true);
   try {
     const s = await fetchStats();
     const netCls = s.net > 0 ? 'up' : s.net < 0 ? 'down' : '';
@@ -463,6 +563,13 @@ async function init() {
   $('stats-btn').onclick = () => void toggleStats(true);
   $('stats-close').onclick = () => void toggleStats(false);
   $('stats').onclick = (e) => { if (e.target === $('stats')) void toggleStats(false); };
+
+  // 赢奖历史（WEB-14）：点某条展开终盘 · 加载更多翻页
+  $('history-list').onclick = (e) => {
+    const head = (e.target as HTMLElement).closest('.hist-head') as HTMLElement | null;
+    if (head?.dataset.toggle) toggleHistoryRow(Number(head.dataset.toggle));
+  };
+  ($('history-more') as HTMLButtonElement).onclick = () => void loadHistory(false);
 
   // 经济按钮
   $('claim-daily').onclick = () => void doClaim('daily');

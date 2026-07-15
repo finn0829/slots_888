@@ -255,6 +255,49 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     return { spin: row ? (JSON.parse(row.result_json) as unknown) : null };
   });
 
+  // 赢奖历史（WEB-14）：最近若干局，游标分页，含终盘盘面供前端展开
+  const HISTORY_DEFAULT_LIMIT = 20;
+  const HISTORY_MAX_LIMIT = 50;
+  app.get('/api/history', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+    const q = req.query as { before?: string; limit?: string };
+    let limit = Number(q.limit);
+    if (!Number.isInteger(limit) || limit <= 0) limit = HISTORY_DEFAULT_LIMIT;
+    limit = Math.min(limit, HISTORY_MAX_LIMIT);
+    const before = Number(q.before);
+    const hasCursor = Number.isInteger(before) && before > 0;
+
+    const rows = db.prepare(
+      `SELECT id, mode, bet, total_cost, total_win, win_tier, created_at, result_json
+       FROM spins
+       WHERE player_id = ?${hasCursor ? ' AND id < ?' : ''}
+       ORDER BY id DESC LIMIT ?`,
+    ).all(...(hasCursor ? [p.id, before, limit] : [p.id, limit])) as Array<{
+      id: number; mode: 'base' | 'free'; bet: number; total_cost: number;
+      total_win: number; win_tier: string | null; created_at: string; result_json: string;
+    }>;
+
+    const history = rows.map((r) => {
+      const stored = JSON.parse(r.result_json) as SpinResult;
+      return {
+        spinId: r.id,
+        createdAt: r.created_at,
+        mode: r.mode,
+        isFree: r.mode === 'free',
+        bet: r.bet,
+        totalCost: r.total_cost,
+        totalWin: r.total_win,
+        winX: r.bet > 0 ? r.total_win / r.bet : 0,
+        winTier: r.win_tier,
+        finalGrid: stored.cascades.at(-1)!.gridAfter,
+      };
+    });
+    // 本页满 limit ⇒ 可能还有更早的；不足则到底了
+    const nextCursor = rows.length === limit ? rows[rows.length - 1]!.id : null;
+    return { history, nextCursor };
+  });
+
   app.get('/api/stats', async (req, reply) => {
     const p = requirePlayer(req);
     if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
