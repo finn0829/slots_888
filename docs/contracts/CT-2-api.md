@@ -1,7 +1,7 @@
 # CT-2 · HTTP API 契约（v0.4）
 
 > 生产者：`apps/server`（Fastify）。消费者：`apps/web`、`apps/admin`。
-> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck。
+> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck；2026-07-15 v0.3 后台完善二期——玩家交易流水（ADM-5c）、对账自检（SRV-13）、看板告警（SRV-14，summary 加 alerts[]）。
 > 2026-07-15 v0.3 玩家侧新增 `GET /api/history`（WEB-14 赢奖历史，游标分页 + 终盘盘面）。
 > 2026-07-15 v0.4（ENG-8 Bonus Buy）：新增 `POST /api/bonus-buy`；`/api/config` 增下发 `bonusBuy`；`/api/stats` 增 `bonusBuySpent`（买入花费计入总投入）。
 
@@ -112,6 +112,36 @@ interface HistoryRow {
 | `GET /api/admin/economy` | 经济参数 | → `{ params: EconomyParams }` |
 | `PUT /api/admin/economy` | 修改经济参数（进操作日志，含前后值） | `{ params: EconomyParams }` → `{ params }`；非法值（非正整数、cooldown>168）→ 400 |
 | `GET /api/admin/ops` | 管理操作日志（只读） | `?type&page` → `{ ops: AdminOpRow[], total }`；每页 50，倒序 |
+| `GET /api/admin/players/:id/transactions` | 玩家交易流水（ADM-5c） | `?page` → `{ transactions: TxRow[], total }`；每页 20，id 倒序；玩家不存在 → 404 |
+| `POST /api/admin/health-check` | 对账自检（SRV-13），同步执行 | → `{ report: HealthReport }`；每次运行记 admin_ops(action=`health_check`，detail 含各项结果摘要) |
+| `GET /api/admin/stats/summary` v0.3 追加 | 响应增加 `alerts: Alert[]`（SRV-14） | 无告警时为空数组；阈值规则见 Alert 注释 |
+
+```ts
+interface TxRow {
+  id: number;
+  type: 'bet' | 'win' | 'daily_bonus' | 'bankrupt_relief' | 'loss_rebate'
+      | 'admin_credit' | 'admin_reset' | 'bonus_buy';
+  amount: number;                // 有符号整数（文）
+  balanceAfter: number;
+  refSpinId: number | null;      // 有值 → 后台可跳审计回放
+  note: string | null;
+  createdAt: string;
+}
+interface HealthReport {
+  ranAt: string;
+  invariant: { ok: boolean; checked: number; violations: { playerId: number; balance: number; expected: number }[] };
+  //  A：全玩家 余额 == INITIAL_BALANCE(10000) + Σtransactions.amount
+  chain: { ok: boolean; checked: number; violations: { playerId: number; txId: number; expected: number; actual: number }[] };
+  //  B：每玩家流水按 id 升序，balance_after 必须 == 上一笔 balance_after + amount（首笔基于初始额）
+  replay: { ok: boolean; sampled: number; mismatches: number[] };   // C：最近 25 + 随机 25 局逐字节重放比对，mismatches 为 spin id
+  rtp: { version: number; spins: number; measured: number | null; estimated: number | null }[];  // D：按配置版本
+}
+type Alert =
+  | { kind: 'rtp_deviation'; version: number; measured: number; estimated: number; se: number; spins: number }
+    // |实测−理论| > 3×SE 且 spins ≥ 500；SE 用经验方差现算（长尾使正态近似偏乐观 → 双保险；运营信号，非统计证明）
+  | { kind: 'big_single_win'; spinId: number; playerId: number; winX: number }        // 今日单局 winX ≥ 1000
+  | { kind: 'player_rtp'; playerId: number; rtp: number; spins: number };             // 个人 RTP ≥ 1.5 且 ≥500 局
+```
 
 ```ts
 interface ConfigMeta {
@@ -146,7 +176,8 @@ interface EconomyParams {
 interface AdminOpRow {
   id: number;
   action: 'login' | 'config_publish' | 'config_rollback' | 'player_credit'
-        | 'player_reset' | 'player_ban' | 'player_unban' | 'economy_update';
+        | 'player_reset' | 'player_ban' | 'player_unban' | 'economy_update'
+        | 'health_check';
   detail: string;                // JSON：动作参数与前后值
   createdAt: string;
 }
