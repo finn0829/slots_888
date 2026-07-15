@@ -2,6 +2,7 @@
 
 > 所有者：`apps/server`（admin/web 一律经 API，不直连库）。
 > 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 加 admin_ops（SRV-9 管理操作日志）与 settings（经济参数）两表。
+> 2026-07-15 v0.3（ENG-8 Bonus Buy）：`transactions.type` 增加 `'bonus_buy'`（买入免费旋转的扣款流水）。SQLite 的 CHECK 不可 ALTER，老库须整表重建迁移（db.ts 已含）。
 > 金额整数（文）。时间统一 UTC ISO-8601 文本。迁移用编号 SQL 文件（`migrations/0001_init.sql`…）。
 
 ```sql
@@ -63,8 +64,8 @@ CREATE TABLE transactions (
   player_id      INTEGER NOT NULL REFERENCES players(id),
   type           TEXT NOT NULL CHECK (type IN (
                    'bet','win','daily_bonus','bankrupt_relief','loss_rebate',
-                   'admin_credit','admin_reset')),
-  amount         INTEGER NOT NULL,                     -- 有符号：bet 为负，win/发币为正
+                   'admin_credit','admin_reset','bonus_buy')),
+  amount         INTEGER NOT NULL,                     -- 有符号：bet/bonus_buy 为负，win/发币为正
   balance_after  INTEGER NOT NULL CHECK (balance_after >= 0),
   ref_spin_id    INTEGER REFERENCES spins(id),
   note           TEXT,                                 -- 管理操作备注
@@ -92,5 +93,5 @@ CREATE TABLE settings (
 ## 对账不变量（看板与审计的根基）
 
 1. 任意玩家：`players.balance == 初始额 + SUM(transactions.amount)`。
-2. 实测 RTP（任意区间/版本）：`SUM(spins.total_win) / SUM(spins.total_cost)`（free spin 的 total_cost=0、赢奖计入分子——免费旋转的价值天然归入触发它的付费 spin 群体）。
+2. 实测 RTP（任意区间/版本）：`SUM(spins.total_win) / (SUM(spins.total_cost) + 买入花费)`（free spin 的 total_cost=0、赢奖计入分子——免费旋转的价值天然归入触发它的付费 spin 群体）。**Bonus Buy（ENG-8）**：买来的免费旋转赢奖同样在 `spins.total_win`（分子），但没有触发它的付费 spin——买入价 = `−SUM(transactions.amount WHERE type='bonus_buy')` 必须补进分母，否则买入会把 RTP 抬虚。已在 `/api/stats`（个人 totalBet）与 `/api/admin/stats/summary`（今日 rtp）落实。〔已知取舍：admin 按日/版本聚合与玩家列表 totalBet 仍只读 spins.total_cost——bonus_buy 无 config_version 无法按版本归因；demo 下不阻断，见 worklog。〕
 3. 一次 `POST /api/spin` = 事务内原子完成：spins 1 行 + transactions ≤2 行（bet、win>0 时）+ players 状态更新。

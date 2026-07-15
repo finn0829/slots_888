@@ -157,6 +157,9 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       freeSpins: cfg.freeSpins,
       maxWinX: cfg.maxWinX,
       pity: { target: PITY_TARGET, award: PITY_AWARD },
+      // Bonus Buy（ENG-8）：开关 + 买入价倍数，均由当前生效配置下发。
+      // 前端展示「花 N× 买入（= X 文）」全用这个 costMultiplier，绝不写死——改配置就跟着变。
+      bonusBuy: { enabled: cfg.bonusBuy.enabled, costMultiplier: cfg.bonusBuy.costMultiplier },
     };
   });
 
@@ -243,6 +246,51 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     return { spin: result, state: playerState(updated, getEconomy()) };
   });
 
+  // ── Bonus Buy（SRV-11 / ENG-8）：花钱直接买 PITY_AWARD 次免费旋转 ──
+  // 买入价按「买入档 RTP ≈ 该档公示 RTP」标定（见 engine bonusbuy-calibrate.ts）。
+  // 服务端权威：校验开关/封禁/余额，扣款走 bonus_buy 流水（计入玩家总投入，不污染赢奖），
+  // 置免费旋转状态 = 10 次 + Ante 强制关，之后玩家用 /api/spin 打完（复用 WEB-18 流程）。
+  app.post('/api/bonus-buy', async (req, reply) => {
+    const p = requirePlayer(req);
+    if (!p) return reply.code(401).send(apiError('UNAUTHORIZED', '缺少或无效的玩家 token'));
+    if (p.status === 'banned') return reply.code(403).send(apiError('BANNED', '账号已被封禁'));
+    if (p.free_spins_remaining > 0) {
+      return reply.code(409).send(apiError('CONFLICT', '还有免费旋转没打完，先打完再买'));
+    }
+
+    const cfgRow = getPublished.get() as { version: number; config_json: string };
+    const config = JSON.parse(cfgRow.config_json) as GameConfig;
+    if (!config.bonusBuy.enabled) {
+      return reply.code(403).send(apiError('BONUS_BUY_DISABLED', '当前未开放买入免费旋转'));
+    }
+
+    const body = (req.body ?? {}) as { bet?: number };
+    const bet = Number(body.bet);
+    if (!BET_LEVELS.includes(bet)) {
+      return reply.code(400).send(apiError('BAD_REQUEST', `非法注档: ${body.bet}，可用 ${BET_LEVELS.join('/')}`));
+    }
+    const cost = Math.round(bet * config.bonusBuy.costMultiplier);
+    if (p.balance < cost) {
+      return reply.code(402).send(apiError('INSUFFICIENT_BALANCE', '余额不足以买入'));
+    }
+
+    db.transaction(() => {
+      const after = p.balance - cost;
+      db.prepare(
+        `UPDATE players SET balance = ?, free_spins_remaining = ?, free_spin_bet = ?,
+         accumulated_multiplier = 1, last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ?`,
+      ).run(after, PITY_AWARD, bet, p.id);
+      // Ante 与买入无关：免费旋转本就忽略 ante，不写 ante 状态。
+      db.prepare(
+        "INSERT INTO transactions (player_id, type, amount, balance_after, note) VALUES (?, 'bonus_buy', ?, ?, ?)",
+      ).run(p.id, -cost, after, `买入 ${PITY_AWARD} 次免费旋转（注 ${bet}）`);
+    })();
+
+    const updated = db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
+    return { cost, freeSpinsAwarded: PITY_AWARD, state: playerState(updated, getEconomy()) };
+  });
+
   // ── 玩家个人统计（SRV-10）：数据全部来自 spins/transactions，与后台看板同源可对账 ──
 
   /** 断线重连：最后一局的完整 SpinResult，供前端恢复盘面（纯展示，不产生判定） */
@@ -322,16 +370,24 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
        WHERE player_id = ? AND type IN ('daily_bonus','bankrupt_relief','loss_rebate','admin_credit')`,
     ).get(p.id) as { received: number };
 
+    // Bonus Buy 买入花费计入「总投入」：买来的免费旋转赢奖已在 spins.total_win（分子），
+    // 买入价必须进分母，个人实测 RTP 才自洽（amount 为负，取相反数为花费）。
+    const buy = db.prepare(
+      "SELECT COALESCE(-SUM(amount), 0) AS spent FROM transactions WHERE player_id = ? AND type = 'bonus_buy'",
+    ).get(p.id) as { spent: number };
+
+    const totalBet = s.totalBet + buy.spent;
     return {
       totalSpins: s.totalSpins,
-      totalBet: s.totalBet,
+      totalBet,
       totalWin: s.totalWin,
-      net: s.totalWin - s.totalBet,
-      rtp: s.totalBet > 0 ? s.totalWin / s.totalBet : null,
+      net: s.totalWin - totalBet,
+      rtp: totalBet > 0 ? s.totalWin / totalBet : null,
       hitRate: s.totalSpins > 0 ? s.winningSpins / s.totalSpins : null,
       biggestWin: s.biggestWin,
       biggestWinX: s.biggestWinX,
       freeSpinsPlayed: s.freeSpinsPlayed,
+      bonusBuySpent: buy.spent,
       bonusReceived: bonus.received,
     };
   });
@@ -711,15 +767,27 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
   const BIG_WIN_X = 50; // 大奖阈值（≥50× 注），summary 卡与审计口径一致
   app.get('/api/admin/stats/summary', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    const today = db.prepare(
+    const todaySpins = db.prepare(
       `SELECT COUNT(*) AS spins,
-              COALESCE(SUM(total_cost), 0) AS totalBet,
+              COALESCE(SUM(total_cost), 0) AS spinBet,
               COALESCE(SUM(total_win), 0) AS totalWin,
-              CAST(SUM(total_win) AS REAL) / NULLIF(SUM(total_cost), 0) AS rtp,
               COUNT(DISTINCT player_id) AS uniquePlayers,
               COALESCE(SUM(CASE WHEN total_win >= bet * ${BIG_WIN_X} THEN 1 ELSE 0 END), 0) AS bigWins
        FROM spins WHERE date(created_at) = date('now')`,
-    ).get();
+    ).get() as { spins: number; spinBet: number; totalWin: number; uniquePlayers: number; bigWins: number };
+    // Bonus Buy 花费计入投入，否则买来的免费旋转赢奖会把看板 RTP 抬虚（概率诚实 / 对账不变量）
+    const { buySpent } = db.prepare(
+      "SELECT COALESCE(-SUM(amount), 0) AS buySpent FROM transactions WHERE type = 'bonus_buy' AND date(created_at) = date('now')",
+    ).get() as { buySpent: number };
+    const totalBet = todaySpins.spinBet + buySpent;
+    const today = {
+      spins: todaySpins.spins,
+      totalBet,
+      totalWin: todaySpins.totalWin,
+      rtp: totalBet > 0 ? todaySpins.totalWin / totalBet : null,
+      uniquePlayers: todaySpins.uniquePlayers,
+      bigWins: todaySpins.bigWins,
+    };
     const pub = db.prepare(
       "SELECT version, estimated_rtp, config_json FROM game_configs WHERE status = 'published' ORDER BY version DESC LIMIT 1",
     ).get() as { version: number; estimated_rtp: number | null; config_json: string };

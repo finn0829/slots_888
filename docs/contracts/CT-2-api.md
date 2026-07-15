@@ -1,7 +1,9 @@
-# CT-2 · HTTP API 契约（v0.3）
+# CT-2 · HTTP API 契约（v0.4）
 
 > 生产者：`apps/server`（Fastify）。消费者：`apps/web`、`apps/admin`。
-> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck；2026-07-15 v0.3 玩家侧新增 `GET /api/history`（WEB-14 赢奖历史，游标分页 + 终盘盘面）。
+> 变更记录：2026-07-14 v0.1 初稿；2026-07-14 v0.2 后台完善——统计 summary/分布、经济参数、操作日志端点，审计回放加 replayCheck。
+> 2026-07-15 v0.3 玩家侧新增 `GET /api/history`（WEB-14 赢奖历史，游标分页 + 终盘盘面）。
+> 2026-07-15 v0.4（ENG-8 Bonus Buy）：新增 `POST /api/bonus-buy`；`/api/config` 增下发 `bonusBuy`；`/api/stats` 增 `bonusBuySpent`（买入花费计入总投入）。
 
 ## 通用约定
 
@@ -11,8 +13,8 @@
 
 ```ts
 interface ApiError { error: { code: string; message: string } }
-// 400 BAD_REQUEST · 401 UNAUTHORIZED · 403 BANNED · 402 INSUFFICIENT_BALANCE
-// 404 NOT_FOUND · 409 CONFLICT（如对非 draft 配置发布）· 429 RATE_LIMITED
+// 400 BAD_REQUEST · 401 UNAUTHORIZED · 403 BANNED / BONUS_BUY_DISABLED · 402 INSUFFICIENT_BALANCE
+// 404 NOT_FOUND · 409 CONFLICT（如对非 draft 配置发布 / 已有免费旋转时买入）· 429 RATE_LIMITED
 ```
 
 - 玩家公共状态对象（多个接口返回）：
@@ -35,8 +37,9 @@ interface PlayerState {
 |---|---|---|---|
 | `POST /api/session` | 创建游客账号（幂等：带旧 token 则返回原账号） | `{ token?: string }` | `{ token: string, state: PlayerState }` |
 | `GET /api/me` | 查询状态 | — | `{ state: PlayerState }` |
-| `GET /api/config` | 当前生效配置的**公开部分** | — | `{ version, betLevels, paytable, rtp, anteRule: { costMultiplier, triggerRate, anteTriggerRate, speedup }, maxWinX, pity, freeSpins }` |
+| `GET /api/config` | 当前生效配置的**公开部分** | — | `{ version, betLevels, paytable, rtp, anteRule: {...}, bonusBuy: { enabled, costMultiplier }, maxWinX, pity, freeSpins }` |
 | `POST /api/spin` | 旋转（唯一改变余额的玩家操作） | `{ bet: number, anteEnabled: boolean }` | `{ spin: SpinResult, state: PlayerState }` |
+| `POST /api/bonus-buy` | 买入免费旋转（ENG-8） | `{ bet: number }` | `{ cost: number, freeSpinsAwarded: number, state: PlayerState }` |
 | `POST /api/claim-daily` | 每日签到补币（**1,000 文**/日，UTC 日界） | — | `{ amount: number, state: PlayerState }`；已领过 → 409 |
 | `POST /api/claim-relief` | 破产补币：余额 < 最低注(10) 时可领 **2,000 文**，冷却 **4 小时** | — | `{ amount: number, state: PlayerState }`；不满足 → 409 |
 | `GET /api/last-spin` | 该玩家最后一局的完整 SpinResult（断线重连用） | — | `{ spin: SpinResult \| null }`；从未转过 → `{ spin: null }` |
@@ -72,6 +75,15 @@ interface HistoryRow {
 2. 否则校验 bet ∈ betLevels、余额 ≥ totalCost，扣款。
 3. 生成 seed（CSPRNG）→ 调 engine `spin()` → 事务内：记 spins、记 transactions（bet + win 两条）、更新 PlayerState（免费次数 += freeSpinsAwarded、diceProgress += scatterCount，**满 100 归零并 +10 次免费旋转**、accumulatedMultiplier 持久化）。
 4. 返回 `SpinResult + PlayerState`。余额在任何路径下不得为负。
+
+**`POST /api/bonus-buy` 服务端语义**（ENG-8，web 不实现任何判定）：
+1. 校验：未登录 → 401；封禁 → 403 BANNED；已有免费旋转未打完 → 409 CONFLICT（不许叠买）。
+2. 取生效配置；`bonusBuy.enabled === false` → **403 `BONUS_BUY_DISABLED`**。
+3. 校验 `bet ∈ betLevels`（否则 400）；`cost = round(bet × bonusBuy.costMultiplier)`（整数文）；余额 < cost → **402 INSUFFICIENT_BALANCE**。
+4. 事务内：扣款（记一条 `transactions` type=`bonus_buy`，amount=−cost，**计入玩家总投入**，不写 spins）、置 `freeSpinsRemaining = pity.award(=10)`、`freeSpinBet = bet`、`accumulatedMultiplier = 1`。**Ante 与买入无关**（免费旋转本就忽略 ante）。
+5. 返回 `{ cost, freeSpinsAwarded, state }`。之后玩家用 `POST /api/spin` 把免费旋转打完（复用 WEB-18「继续」流程）。
+- **买入价定价（概率诚实红线）**：`costMultiplier` 按「买入档 RTP ≈ 该档公示 RTP」标定（买入价 = E[10 次段价值×注] / nominalRtp），花钱买回来的期望返奖率与正常玩这一档一致。前端展示「花 N× 买入（= X 文）」**全用下发的 costMultiplier**，绝不写死。
+- **个人统计对账**：买来的免费旋转赢奖进 `spins.total_win`（→ `/api/stats` 的 totalWin/分子），买入价进 `bonusBuySpent` 且加入 `totalBet`（分母），个人实测 RTP 仍自洽。
 
 **断线重连（WEB-18）**：免费旋转状态（剩余次数、累计倍数、freeSpinBet、保底进度）本就在服务端持久化，刷新页面不丢局。但前端需要恢复**演出上下文**——否则玩家看到的是随机 demo 盘面配着"免费旋转还剩 7 次"，无从判断上一局发生了什么。
 `GET /api/last-spin` 返回最后一局的 SpinResult，web 取其最后一次 cascade 的 `gridAfter` 作为开局盘面（即上一局的真实终盘）。这只是**展示恢复**，不产生任何判定；免费旋转要继续，仍须玩家点「开局」再发一次 `POST /api/spin`。

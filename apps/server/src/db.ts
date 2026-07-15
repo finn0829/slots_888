@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   player_id      INTEGER NOT NULL REFERENCES players(id),
   type           TEXT NOT NULL CHECK (type IN (
                    'bet','win','daily_bonus','bankrupt_relief','loss_rebate',
-                   'admin_credit','admin_reset')),
+                   'admin_credit','admin_reset','bonus_buy')),
   amount         INTEGER NOT NULL,
   balance_after  INTEGER NOT NULL CHECK (balance_after >= 0),
   ref_spin_id    INTEGER REFERENCES spins(id),
@@ -94,6 +94,38 @@ export function openDb(dbPath: string): Db {
   const cols = db.prepare('PRAGMA table_info(players)').all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === 'last_relief_at')) {
     db.exec('ALTER TABLE players ADD COLUMN last_relief_at TEXT');
+  }
+
+  // 迁移（ENG-8）：transactions.type 的 CHECK 增加 'bonus_buy'。
+  // SQLite 的 CHECK 约束不能 ALTER，只能重建表；老库须整表重建才收得下买入流水。
+  const txSql = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'",
+  ).get() as { sql: string } | undefined)?.sql ?? '';
+  if (txSql && !txSql.includes('bonus_buy')) {
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec('ALTER TABLE transactions RENAME TO transactions_old');
+      db.exec(`CREATE TABLE transactions (
+        id             INTEGER PRIMARY KEY,
+        player_id      INTEGER NOT NULL REFERENCES players(id),
+        type           TEXT NOT NULL CHECK (type IN (
+                         'bet','win','daily_bonus','bankrupt_relief','loss_rebate',
+                         'admin_credit','admin_reset','bonus_buy')),
+        amount         INTEGER NOT NULL,
+        balance_after  INTEGER NOT NULL CHECK (balance_after >= 0),
+        ref_spin_id    INTEGER REFERENCES spins(id),
+        note           TEXT,
+        created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      )`);
+      db.exec(`INSERT INTO transactions
+        (id, player_id, type, amount, balance_after, ref_spin_id, note, created_at)
+        SELECT id, player_id, type, amount, balance_after, ref_spin_id, note, created_at
+        FROM transactions_old`);
+      db.exec('DROP TABLE transactions_old');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tx_player_time ON transactions(player_id, created_at)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_tx_type_time   ON transactions(type, created_at)');
+    })();
+    db.pragma('foreign_keys = ON');
   }
 
   // 首次启动：把默认预设发布为 version 1
