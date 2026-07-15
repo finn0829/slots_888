@@ -83,6 +83,12 @@ button.danger:hover:not(:disabled) { background: #F9ECEC; }
 .op-detail b { color: var(--ink-900); font-weight: 600; }
 .ops-table td { font-size: 13px; }
 
+/* ── 玩家交易流水（ADM-5c）── */
+.tx-expand-row > td { background: var(--ivory-300); padding: 12px 18px; }
+.tx-ledger table { box-shadow: none; border: 1px solid #E4DECB; }
+.tx-ledger thead { background: var(--felt-500); }
+.tx-ledger .pager { margin: 10px 0 2px; }
+
 /* ── 审计回放（ADM-4）── */
 .filters input[type=date] { padding: 6px 8px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 13px; background: white; }
 .filters input { padding: 7px 10px; border: 1px solid var(--gold-700); border-radius: 7px; font-size: 14px; }

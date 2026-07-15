@@ -13,7 +13,11 @@
 
 ## 环节 1 · ADM-5c 玩家交易流水
 
-（待记录）
+- TDD：3 用例（401/404 · 字段+倒序+余额从流水加得出来 · 分页 25 笔跨两页无重叠）先跑 3 失败再实现。
+- 服务端：`GET /api/admin/players/:id/transactions`，一条 SELECT 别名转 camelCase，复用 requireTarget。
+- 前端：PlayersPage 行内展开 `TxLedger` 组件（独立分页）；带 ref_spin_id 的行「回放 #N」跳 `#/audit?playerId=&spinId=`——顺手给 AuditPage 加了 spinId 直达（DetailView 本来就按 id 拉取，零成本）。
+- 验证：server 93/93 绿；admin tsc 过；Playwright 11/11（含两条对账断言：最新 balanceAfter==当前余额、Σamount==余额−初始额）；截图 adm-m7/players-txledger.png 目检过。
+- 踩坑：测试里查余额误用了不存在的 `/api/state`（实际是 `/api/me`）——先 grep 现有路由再写测试能省一轮。
 
 ## 环节 2 · SRV-13/ADM-9 对账自检
 

@@ -96,7 +96,10 @@ export function AuditPage() {
   const [minWinX, setMinWinX] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ spins: SpinRow[]; total: number } | null>(null);
-  const [detailId, setDetailId] = useState<number | null>(null);
+  // #/audit?spinId=N 直达单局回放（玩家流水的 ref_spin 跳转用）
+  const [detailId, setDetailId] = useState<number | null>(
+    route.params.get('spinId') ? Number(route.params.get('spinId')) : null,
+  );
   const [error, setError] = useState('');
 
   const load = useCallback(async (goPage: number) => {

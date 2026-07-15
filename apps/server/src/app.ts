@@ -708,6 +708,23 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     });
   }
 
+  // ── 玩家交易流水（ADM-5c）──
+
+  const TX_PAGE_SIZE = 20;
+  app.get('/api/admin/players/:id/transactions', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const target = requireTarget(req, reply);
+    if (!target) return;
+    const page = Math.max(1, Number((req.query as { page?: string }).page) || 1);
+    const { total } = db.prepare('SELECT COUNT(*) AS total FROM transactions WHERE player_id = ?')
+      .get(target.id) as { total: number };
+    const transactions = db.prepare(
+      `SELECT id, type, amount, balance_after AS balanceAfter, ref_spin_id AS refSpinId, note, created_at AS createdAt
+       FROM transactions WHERE player_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+    ).all(target.id, TX_PAGE_SIZE, (page - 1) * TX_PAGE_SIZE);
+    return { transactions, total };
+  });
+
   app.get('/api/admin/economy', async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     return { params: getEconomy() };

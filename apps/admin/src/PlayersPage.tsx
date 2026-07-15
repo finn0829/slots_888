@@ -1,11 +1,70 @@
-import { useCallback, useEffect, useState } from 'react';
-import { api, type PlayerAdminRow } from './api';
+import React, { useCallback, useEffect, useState } from 'react';
+import { api, type PlayerAdminRow, type TxRow } from './api';
 import { navigate } from './router';
 
 const PAGE_SIZE = 20;
+const TX_PAGE_SIZE = 20;
 /** 测试用一键补币额度：按最大注 500 算够打 2000 局，不用反复回后台 */
 const QUICK_TOPUP = 1_000_000;
 const pct = (v: number | null) => (v == null ? '—' : `${(v * 100).toFixed(2)}%`);
+
+const TX_TYPE_NAMES: Record<TxRow['type'], string> = {
+  bet: '下注', win: '赢奖', daily_bonus: '每日签到', bankrupt_relief: '破产补助',
+  loss_rebate: '连败返利', admin_credit: '管理员补币', admin_reset: '余额重置', bonus_buy: '购买免费旋转',
+};
+
+/** 行内展开的交易流水（ADM-5c）：核对"这个玩家的钱是哪来的" */
+function TxLedger({ playerId }: { playerId: number }) {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<{ transactions: TxRow[]; total: number } | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api<{ transactions: TxRow[]; total: number }>(`/api/admin/players/${playerId}/transactions?page=${page}`)
+      .then((d) => { setData(d); setError(''); })
+      .catch((e) => setError((e as Error).message));
+  }, [playerId, page]);
+
+  if (error) return <p className="error-line">⚠ 流水加载失败:{error}</p>;
+  if (data === null) return <p className="sub">流水加载中…</p>;
+  if (data.transactions.length === 0) return <p className="empty">该玩家还没有任何流水。</p>;
+  const pages = Math.max(1, Math.ceil(data.total / TX_PAGE_SIZE));
+  return (
+    <div className="tx-ledger">
+      <table>
+        <thead>
+          <tr><th>流水号</th><th>类型</th><th>金额</th><th>余额</th><th>备注</th><th>时间</th><th></th></tr>
+        </thead>
+        <tbody>
+          {data.transactions.map((t) => (
+            <tr key={t.id}>
+              <td>#{t.id}</td>
+              <td className="td-left">{TX_TYPE_NAMES[t.type] ?? t.type}</td>
+              <td className={t.amount < 0 ? 'bad' : ''}>{t.amount > 0 ? '+' : ''}{t.amount.toLocaleString()}</td>
+              <td>{t.balanceAfter.toLocaleString()}</td>
+              <td className="td-left">{t.note ?? '—'}</td>
+              <td>{t.createdAt.slice(5, 19).replace('T', ' ')}</td>
+              <td className="td-ops">
+                {t.refSpinId != null && (
+                  <button onClick={() => navigate('audit', { playerId: String(playerId), spinId: String(t.refSpinId) })}>
+                    回放 #{t.refSpinId}
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {pages > 1 && (
+        <div className="pager">
+          <button disabled={page <= 1} onClick={() => setPage(page - 1)}>← 上一页</button>
+          <span className="sub">{page} / {pages} 页 · 共 {data.total} 笔</span>
+          <button disabled={page >= pages} onClick={() => setPage(page + 1)}>下一页 →</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function PlayersPage() {
   const [query, setQuery] = useState('');
@@ -13,6 +72,7 @@ export function PlayersPage() {
   const [data, setData] = useState<{ players: PlayerAdminRow[]; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const load = useCallback(async (goPage: number, q = query) => {
     const qs = new URLSearchParams({ page: String(goPage) });
@@ -84,7 +144,8 @@ export function PlayersPage() {
             </thead>
             <tbody>
               {data.players.map((p) => (
-                <tr key={p.id}>
+                <React.Fragment key={p.id}>
+                <tr className={expandedId === p.id ? 'row-active' : ''}>
                   <td>#{p.id}</td>
                   <td><span className={`badge ${p.status === 'banned' ? 'mismatch' : 'published'}`}>{p.status === 'banned' ? '已封禁' : '正常'}</span></td>
                   <td>{p.balance.toLocaleString()}</td>
@@ -101,8 +162,17 @@ export function PlayersPage() {
                       {p.status === 'banned' ? '解封' : '封禁'}
                     </button>
                     <button onClick={() => navigate('audit', { playerId: String(p.id) })}>查 spin</button>
+                    <button className={expandedId === p.id ? 'primary' : ''} onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
+                      {expandedId === p.id ? '收起流水' : '流水'}
+                    </button>
                   </td>
                 </tr>
+                {expandedId === p.id && (
+                  <tr className="tx-expand-row">
+                    <td colSpan={9}><TxLedger playerId={p.id} /></td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

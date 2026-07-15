@@ -69,6 +69,19 @@ export interface PlayerAdminRow {
   spins: number; totalBet: number; totalWin: number;
 }
 
+// ── 玩家交易流水（ADM-5c）──
+
+export interface TxRow {
+  id: number;
+  type: 'bet' | 'win' | 'daily_bonus' | 'bankrupt_relief' | 'loss_rebate'
+      | 'admin_credit' | 'admin_reset' | 'bonus_buy';
+  amount: number;
+  balanceAfter: number;
+  refSpinId: number | null;
+  note: string | null;
+  createdAt: string;
+}
+
 // ── 审计回放（ADM-4 / SRV-6b）──
 
 export interface SpinRow {
