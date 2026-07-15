@@ -96,4 +96,13 @@ export interface GameConfig {
    * 后台改过权重的草稿配置须重跑模拟器，用估算值覆盖（见 /api/config 的 rtp 字段）。
    */
   nominalRtp: number;
+  /**
+   * Bonus Buy（ENG-8）：直接花钱买 10 次免费旋转（= 保底段）。
+   * · enabled：后台开关（默认开），关掉则前端隐藏买入按钮、服务端拒绝买入。
+   * · costMultiplier：买入价 = costMultiplier × 注（实扣 round 到整数文）。
+   *   按「买入档 RTP ≈ 该档公示 RTP」标定：costMultiplier = E[10 次免费旋转段价值×注] / nominalRtp，
+   *   与 payoutScale/nominalRtp 一样每档单独标（E[段价值] 随 payoutScale 变）。
+   *   **改了任何权重/赔付/scale，这个数就失效**，须重跑 `npx tsx packages/engine/src/bonusbuy-calibrate.ts`。
+   */
+  bonusBuy: { enabled: boolean; costMultiplier: number };
 }

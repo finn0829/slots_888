@@ -12,11 +12,15 @@ export type PresetId = (typeof PRESET_IDS)[number];
  * 必须重跑 `npx tsx packages/engine/src/recalibrate.ts`；玩家侧公示的 RTP 就是 nominalRtp。
  */
 export function getPreset(id: string): GameConfig {
-  const presets: Record<PresetId, { scale: number; rtp: number }> = {
-    rtp92: { scale: 0.9561, rtp: 0.922 },   // 实测 92.24% ± 0.15pp
-    rtp945: { scale: 0.9793, rtp: 0.947 },  // 实测 94.73% ± 0.15pp
-    rtp965: { scale: 1.0, rtp: 0.963 },     // 实测 96.26% ± 0.15pp（默认档）
-    rtp975: { scale: 1.0142, rtp: 0.971 },  // 实测 97.10% ± 0.15pp
+  // buyMult：Bonus Buy 买入价倍数，每档单独标定（ENG-8），随 payoutScale 变。
+  //   买入价 = buyMult × 注；按「买入档 RTP ≈ 该档公示 RTP」定：buyMult = E[10 次段价值×注] / rtp。
+  //   由 `npx tsx packages/engine/src/bonusbuy-calibrate.ts` 产出，改权重/赔付/scale 后须重跑。
+  // buyMult 由 500k 段标定，复测买入档 RTP 与公示 RTP 偏差 ≤0.66pp（噪声 ±0.5pp），详见 eng8 报告。
+  const presets: Record<PresetId, { scale: number; rtp: number; buyMult: number }> = {
+    rtp92: { scale: 0.9561, rtp: 0.922, buyMult: 44.21 },   // 买入档复测 92.08% ± 0.48pp
+    rtp945: { scale: 0.9793, rtp: 0.947, buyMult: 44.86 },  // 买入档复测 94.27% ± 0.50pp
+    rtp965: { scale: 1.0, rtp: 0.963, buyMult: 44.30 },     // 买入档复测 96.21% ± 0.51pp（默认档）
+    rtp975: { scale: 1.0142, rtp: 0.971, buyMult: 44.51 },  // 买入档复测 97.76% ± 0.52pp
   };
   const p = presets[id as PresetId];
   if (p === undefined) throw new Error(`未知预设: ${id}（可用: ${PRESET_IDS.join(', ')}）`);
@@ -24,6 +28,7 @@ export function getPreset(id: string): GameConfig {
   cfg.presetId = id;
   cfg.payoutScale = cfg.payoutScale * p.scale;
   cfg.nominalRtp = p.rtp;
+  cfg.bonusBuy = { enabled: true, costMultiplier: p.buyMult };
   return cfg;
 }
 
@@ -66,5 +71,7 @@ export function defaultPreset(): GameConfig {
     // ENG-10 标定：0.42 × 1.0056（96.5 档）。默认档就是 rtp965，二者必须一致。
     payoutScale: 0.4224,
     nominalRtp: 0.963,
+    // ENG-8 Bonus Buy：默认开；买入价倍数 = rtp965 档标定值（须与 getPreset('rtp965').bonusBuy 一致）。
+    bonusBuy: { enabled: true, costMultiplier: 44.30 },
   };
 }

@@ -44,6 +44,9 @@ export interface AnalyzeResult {
   /** 单段免费旋转的期望价值（×注） */
   featureValueX: number;
   featureValueStderr: number;
+  /** 保底段（PITY_AWARD=10 次）的期望价值（×注）——Bonus Buy 定价用这个 */
+  pityValueX: number;
+  pityValueStderr: number;
   hitRate: number;
   /** 每 spin 期望骰子数（决定保底速度） */
   scatterPerSpin: number;
@@ -69,6 +72,40 @@ function playFeature(config: GameConfig, bet: number, seedBase: string, initialS
     i++;
   }
   return win;
+}
+
+export interface SegmentValueResult {
+  /** E[单段价值 ÷ 注] */
+  valueX: number;
+  /** ±1 标准误差 */
+  stderr: number;
+  runs: number;
+  award: number;
+}
+
+/**
+ * 直接模拟 `award` 次免费旋转段的期望价值（×注），含再触发延长与累计倍数滚雪球。
+ * 不做任何线性外推（ENG-10 血泪：段价值随次数超线性，`v20 > 2.1×v10`）。
+ * Bonus Buy 定价用 award=10（= 保底段），是唯一数学真相源，不许别处复制此逻辑。
+ */
+export function featureSegmentValueX(
+  config: GameConfig,
+  opts: { award?: number; runs?: number; bet?: number; seedPrefix?: string } = {},
+): SegmentValueResult {
+  const award = opts.award ?? PITY_AWARD;
+  const runs = opts.runs ?? 60_000;
+  const bet = opts.bet ?? 100;
+  const seedPrefix = opts.seedPrefix ?? 'seg';
+  let sum = 0;
+  let sum2 = 0;
+  for (let i = 0; i < runs; i++) {
+    const w = playFeature(config, bet, `${seedPrefix}:S${i}`, award) / bet;
+    sum += w;
+    sum2 += w * w;
+  }
+  const valueX = sum / runs;
+  const variance = Math.max(0, sum2 / runs - valueX * valueX);
+  return { valueX, stderr: Math.sqrt(variance / runs), runs, award };
 }
 
 export function analyze(config: GameConfig, opts: AnalyzeOptions = {}): AnalyzeResult {
@@ -186,6 +223,8 @@ export function analyze(config: GameConfig, opts: AnalyzeOptions = {}): AnalyzeR
     fsTriggerRateSampled,
     featureValueX,
     featureValueStderr,
+    pityValueX,
+    pityValueStderr,
     hitRate: hits / baseSpins,
     scatterPerSpin,
     costMultiplier,

@@ -7,5 +7,5 @@ export { findWins, removeAndDrop, NORMAL_SYMBOLS } from './grid';
 export { createRng, type Rng } from './rng';
 export { defaultPreset, getPreset, PRESET_IDS, type PresetId } from './config';
 export { simulate, type SimulateOptions, type SimulateStats } from './simulate';
-export { analyze, type AnalyzeOptions, type AnalyzeResult } from './analyze';
+export { analyze, featureSegmentValueX, type AnalyzeOptions, type AnalyzeResult, type SegmentValueResult } from './analyze';
 export { freeSpinTriggerRate, anteSpeedup } from './trigger';

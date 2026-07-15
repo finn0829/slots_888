@@ -2,6 +2,7 @@
 
 > 生产者：`packages/engine`。消费者：server（落库/返回）、web（演出）、admin（审计回放）。
 > 变更记录：2026-07-14 v0.1 初稿；同日用户确认：scatter 仅计首盘面、免费旋转公式 10+2×(骰子数−4)、经济数值（初始 10,000 文 / 注档 10–500）。
+> 2026-07-15 v0.5（ENG-8 Bonus Buy）：`GameConfig` 新增 **`bonusBuy: { enabled: boolean; costMultiplier: number }`**。买入 = 花钱直接进 10 次免费旋转（= 保底段），免费旋转数学与自然触发**完全一致**，SpinResult **不变**（买入是纯服务端状态操作：扣钱 + 置 freeSpinsRemaining=10 + Ante 关，之后走现有 free spin）。costMultiplier 按「买入档 RTP ≈ 该档公示 RTP」标定，每档单独（随 payoutScale 变），由 `packages/engine/src/bonusbuy-calibrate.ts` 产出；改任何权重/赔付/scale 都须重跑。详见 `docs/reports/eng8-bonus-buy-rtp.md`。
 > 2026-07-14 v0.4（ENG-10 重校）：`GameConfig` 新增 **`nominalRtp`**——该配置由 `analyze()` 实测标定的返奖率，**玩家侧公示的就是这个数**（经 `/api/config` 的 `rtp` 字段下发，前端不得写死）。同时修了 `analyze()` 的一处**偏差**：保底通道原按 `E[单段价值] × (10 / avgAward)` 线性折算，但免费旋转的价值随次数**超线性**增长（累计倍数滚雪球），导致保底被高估、基准档 RTP 被报成 97.4%（真值 95.7%）。四档 scale 已按修正后的分析器重标。详见 `docs/reports/eng10-preset-rtp.md`。
 > 2026-07-14 v0.3（ENG-6b 修正）：ante 的 scatter 权重系数定为 **×1.16**（1.12 时 ante 档 RTP 89% < 基础档 95.6%，加注反更亏，方向错误）。用方差缩减分析器（`analyze.ts`）复测：1.16 → 免费旋转触发 1/155→1/93（快 1.67 倍），RTP 略高 0.9%。该参数极敏感（1.14 亏 3%，1.17 赚 2%），改动必须重跑 analyze。详见 `docs/reports/eng6b-ante-math.md`。
 > 2026-07-14 v0.2（ENG-1 调参结论）：① ante 的 scatter 权重系数由 ×2 改为 ×1.12（触发概率对权重近似四次方敏感，×2 会使触发率涨约 8.8 倍即 1/152→1/17，击穿 RTP）——**已被 v0.3 取代**；② 连锁倍数阶梯超出末档 10 后每级 **+5**（15, 20, 25…），免费局按阶梯格位跨 spin 推进；③ 封顶 5000× 为**单 spin 语义**，免费旋转整段总和可超过（是否改为整段封顶待定）；④ 基础局 accumulatedMultiplierAfter 恒为 0。
